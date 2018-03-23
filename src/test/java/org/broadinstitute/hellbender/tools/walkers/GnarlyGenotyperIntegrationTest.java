@@ -72,11 +72,11 @@ public class GnarlyGenotyperIntegrationTest extends CommandLineProgramTest {
 
         final List<VariantContext> expectedVC = getVariantContexts(expected);
         final List<VariantContext> actualVC = getVariantContexts(output);
-        VariantContextTestUtils.assertEqualVariants(actualVC, expectedVC);
+        VariantContextTestUtils.DEPRECATED_assertEqualVariants_DEPRECATED(actualVC, expectedVC);
         if (expectedDb != null) {
             final List<VariantContext> expectedDB = getVariantContexts(expectedDb);
             final List<VariantContext> actualDB = getVariantContexts(outputDatabase);
-            VariantContextTestUtils.assertEqualVariants(actualDB, expectedDB);
+            VariantContextTestUtils.DEPRECATED_assertEqualVariants_DEPRECATED(actualDB, expectedDB);
         }
     }
 
