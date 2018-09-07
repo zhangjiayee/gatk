@@ -1,10 +1,11 @@
 package org.broadinstitute.hellbender.tools.spark.sv.integration;
 
 import org.broadinstitute.hellbender.CommandLineProgramTest;
-import org.broadinstitute.hellbender.tools.spark.sv.utils.ExampleTrainXGBoostClassifier;
-import org.broadinstitute.hellbender.tools.spark.sv.utils.MachineLearningUtils;
+import org.broadinstitute.hellbender.tools.spark.sv.ml.ExampleTrainXGBoostClassifier;
+import org.broadinstitute.hellbender.tools.spark.sv.ml.GATKClassifier;
 import org.broadinstitute.hellbender.testutils.ArgumentsBuilder;
 import org.broadinstitute.hellbender.testutils.BaseTest;
+import org.broadinstitute.hellbender.tools.spark.sv.ml.TruthSet;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
@@ -17,16 +18,16 @@ public class ExampleTrainXGBoostClassifierIntegrationTest extends CommandLinePro
     private static final String TOOL_NAME = ExampleTrainXGBoostClassifier.class.getSimpleName();
     private static final String SV_UTILS_DIR = publicTestDir + "org/broadinstitute/hellbender/tools/spark/sv/utils/";
     private static final String INPUT_FILE_PATH = SV_UTILS_DIR + "agaricus-integers.csv.gz";
-    private static final MachineLearningUtils.TruthSet TRUTH_SET = MachineLearningUtils.loadCsvFile(INPUT_FILE_PATH);
+    private static final TruthSet TRUTH_SET = TruthSet.loadCsvFile(INPUT_FILE_PATH);
     private static final double HYPERPARAMETER_TUNING_PROPORTION = 0.05;
 
     @Test(groups = "sv")
     protected void testTrainAndSaveClassifier() throws IOException {
         // require perfect accuracy of final classifier (this is easy, it's trained on whole data set)
         final File outputFile = runTool(INPUT_FILE_PATH);
-        final MachineLearningUtils.GATKClassifier classifier = MachineLearningUtils.GATKClassifier.load(outputFile.getAbsolutePath());
-        final int[] predictedLabels = classifier.predictClassLabels(TRUTH_SET.features);
-        assertArrayEquals(predictedLabels, TRUTH_SET.classLabels, "predicted class labels should exactly match actual labels.");
+        final GATKClassifier classifier = GATKClassifier.load(outputFile.getAbsolutePath());
+        final int[] predictedLabels = classifier.predictClassLabels(TRUTH_SET.getFeatures());
+        assertArrayEquals(predictedLabels, TRUTH_SET.getClassLabels(), "predicted class labels should exactly match actual labels.");
     }
 
     private File runTool(final String inputPath) {

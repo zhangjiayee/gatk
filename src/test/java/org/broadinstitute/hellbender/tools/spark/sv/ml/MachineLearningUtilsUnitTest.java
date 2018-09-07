@@ -1,4 +1,4 @@
-package org.broadinstitute.hellbender.tools.spark.sv.utils;
+package org.broadinstitute.hellbender.tools.spark.sv.ml;
 
 import org.apache.commons.math3.linear.Array2DRowRealMatrix;
 import org.apache.commons.math3.linear.RealMatrix;
@@ -143,7 +143,7 @@ public class MachineLearningUtilsUnitTest extends GATKBaseTest {
     protected void testGetStratifyArray() {
         final int numRows = NUM_ELEMENTS_TEST;
         // pick something arbitrary that makes the binning do something
-        final int numDataValues = MachineLearningUtils.DEFAULT_NUM_STRATIFY_BINS * 2;
+        final int numDataValues = ClassifierTuner.DEFAULT_NUM_STRATIFY_BINS * 2;
 
         final RealMatrix features = new Array2DRowRealMatrix(
                 IntStream.range(0, numRows).mapToObj(
@@ -154,9 +154,9 @@ public class MachineLearningUtilsUnitTest extends GATKBaseTest {
         );
         final int[] classLabels = IntStream.range(0, numRows).map(r->random.nextInt(NUM_CLASSES_TEST)).toArray();
 
-        final MachineLearningUtils.TruthSet truthSet = new MachineLearningUtils.TruthSet(features, classLabels);
+        final TruthSet truthSet = new TruthSet(features, classLabels);
 
-        final int[] stratify = truthSet.getStratifyArray(MachineLearningUtils.DEFAULT_NUM_STRATIFY_BINS,
+        final int[] stratify = truthSet.getStratifyArray(ClassifierTuner.DEFAULT_NUM_STRATIFY_BINS,
                                                          MIN_COUNTS_PER_STRATIFY_BIN);
         // check length is consistent with num rows
         Assert.assertEquals(stratify.length, truthSet.getNumRows(), "stratify has incorrect length");
@@ -183,7 +183,7 @@ public class MachineLearningUtilsUnitTest extends GATKBaseTest {
         for(final List<Integer> inds: stratifyInds.values()) {
             final long numClassLabels = Arrays.stream(
                     MachineLearningUtils.slice(
-                        truthSet.classLabels,
+                            truthSet.getClassLabels(),
                         inds.stream().mapToInt(Integer::intValue).toArray()
                 )
             ).distinct().count();
@@ -202,21 +202,21 @@ public class MachineLearningUtilsUnitTest extends GATKBaseTest {
         // Create stratify array, random array of class membership indexes used to stratify splits. Make it class
         // populations uneven to further stress-test algorithms.
         final int[] stratify = Arrays.stream(
-                new MachineLearningUtils.ClassifierIntegerLogParamRange(1, NUM_STRATIFY_CLASSES)
+                new ClassifierParamRange.ClassifierIntegerLogParamRange(1, NUM_STRATIFY_CLASSES)
                 .getRandomSamples(random, NUM_ELEMENTS_TEST)
         ).mapToInt(i->i).toArray();
         Assert.assertEquals(stratify.length, NUM_ELEMENTS_TEST, "stratify was generated improperly");
 
         // Test stratified and un-stratified train-test split
         assertGoodSplit(
-                MachineLearningUtils.TrainTestSplit.getTrainTestSplit(
+                TrainTestSplit.getTrainTestSplit(
                         TRAINING_FRACTION, NUM_ELEMENTS_TEST, random, stratify
                 ),
                 NUM_ELEMENTS_TEST, TRAINING_FRACTION, stratify
         );
 
         assertGoodSplit(
-                MachineLearningUtils.TrainTestSplit.getTrainTestSplit(
+                TrainTestSplit.getTrainTestSplit(
                         TRAINING_FRACTION, NUM_ELEMENTS_TEST, random, null
                 ),
                 NUM_ELEMENTS_TEST, TRAINING_FRACTION, null
@@ -226,45 +226,45 @@ public class MachineLearningUtilsUnitTest extends GATKBaseTest {
         // Test stratified and un-stratified cross-validation splits
         final double cvTrainingFraction = 1.0 - 1.0 / (double)NUM_CROSSVALIDATION_FOLDS;
 
-        final Iterator<MachineLearningUtils.TrainTestSplit> stratifiedCvSplits
-                = MachineLearningUtils.TrainTestSplit.getCrossvalidationSplits(
+        final Iterator<TrainTestSplit> stratifiedCvSplits
+                = TrainTestSplit.getCrossvalidationSplits(
                         NUM_CROSSVALIDATION_FOLDS, NUM_ELEMENTS_TEST, random, stratify
             );
         while(stratifiedCvSplits.hasNext()) {
-            final MachineLearningUtils.TrainTestSplit stratifiedCvSplit = stratifiedCvSplits.next();
+            final TrainTestSplit stratifiedCvSplit = stratifiedCvSplits.next();
             assertGoodSplit(stratifiedCvSplit, NUM_ELEMENTS_TEST, cvTrainingFraction, stratify);
         }
 
-        final Iterator<MachineLearningUtils.TrainTestSplit> flatCvSplits
-                = MachineLearningUtils.TrainTestSplit.getCrossvalidationSplits(
+        final Iterator<TrainTestSplit> flatCvSplits
+                = TrainTestSplit.getCrossvalidationSplits(
                 NUM_CROSSVALIDATION_FOLDS, NUM_ELEMENTS_TEST, random, null
         );
         while(flatCvSplits.hasNext()) {
-            final MachineLearningUtils.TrainTestSplit flatCvSplit = flatCvSplits.next();
+            final TrainTestSplit flatCvSplit = flatCvSplits.next();
             assertGoodSplit(flatCvSplit, NUM_ELEMENTS_TEST, cvTrainingFraction, null);
         }
 
         // check corner-cases
         assertGoodSplit(
-                MachineLearningUtils.TrainTestSplit.getTrainTestSplit(
+                TrainTestSplit.getTrainTestSplit(
                         0.0, NUM_ELEMENTS_TEST, random, stratify
                 ),
                 NUM_ELEMENTS_TEST, 0.0, stratify
         );
         assertGoodSplit(
-                MachineLearningUtils.TrainTestSplit.getTrainTestSplit(
+                TrainTestSplit.getTrainTestSplit(
                         1.0, NUM_ELEMENTS_TEST, random, stratify
                 ),
                 NUM_ELEMENTS_TEST, 1.0, stratify
         );
         assertGoodSplit(
-                MachineLearningUtils.TrainTestSplit.getTrainTestSplit(
+                TrainTestSplit.getTrainTestSplit(
                         0.0, NUM_ELEMENTS_TEST, random, null
                 ),
                 NUM_ELEMENTS_TEST, 0.0, null
         );
         assertGoodSplit(
-                MachineLearningUtils.TrainTestSplit.getTrainTestSplit(
+                TrainTestSplit.getTrainTestSplit(
                         1.0, NUM_ELEMENTS_TEST, random, null
                 ),
                 NUM_ELEMENTS_TEST, 1.0, null
@@ -272,28 +272,28 @@ public class MachineLearningUtilsUnitTest extends GATKBaseTest {
 
         // ensure errors are thrown when crazy values are passed
         try {
-            MachineLearningUtils.TrainTestSplit.getTrainTestSplit(
+            TrainTestSplit.getTrainTestSplit(
                     -0.01, NUM_ELEMENTS_TEST, random, stratify
             );
             Assert.fail("getTrainTestSplit should throw IllegalArgmentException when trainingFraction is not in range [0, 1]");
         } catch (IllegalArgumentException ignored) {
         }
         try {
-            MachineLearningUtils.TrainTestSplit.getTrainTestSplit(
+            TrainTestSplit.getTrainTestSplit(
                     1.01, NUM_ELEMENTS_TEST, random, stratify
             );
             Assert.fail("getTrainTestSplit should throw IllegalArgmentException when trainingFraction is not in range [0, 1]");
         } catch (IllegalArgumentException ignored) {
         }
         try {
-            MachineLearningUtils.TrainTestSplit.getTrainTestSplit(
+            TrainTestSplit.getTrainTestSplit(
                     -0.01, NUM_ELEMENTS_TEST, random, null
             );
             Assert.fail("getTrainTestSplit should throw IllegalArgmentException when trainingFraction is not in range [0, 1]");
         } catch (IllegalArgumentException ignored) {
         }
         try {
-            MachineLearningUtils.TrainTestSplit.getTrainTestSplit(
+            TrainTestSplit.getTrainTestSplit(
                     1.01, NUM_ELEMENTS_TEST, random, null
             );
             Assert.fail("getTrainTestSplit should throw IllegalArgmentException when trainingFraction is not in range [0, 1]");
@@ -301,7 +301,7 @@ public class MachineLearningUtilsUnitTest extends GATKBaseTest {
         }
 
         try {
-            MachineLearningUtils.TrainTestSplit.getCrossvalidationSplits(
+            TrainTestSplit.getCrossvalidationSplits(
                     1, NUM_ELEMENTS_TEST, random, stratify
             );
             Assert.fail("getCrossvalidationSplits should throw IllegalArgmentException when numCrossvalidationFolds < 2");
@@ -317,16 +317,16 @@ public class MachineLearningUtilsUnitTest extends GATKBaseTest {
      * with different param ranges scrambled independently, and of the appropriate data type).
      */
     protected void testParamRanges() {
-        final Double[] linearSamples = new MachineLearningUtils.ClassifierLinearParamRange(
+        final Double[] linearSamples = new ClassifierParamRange.ClassifierLinearParamRange(
                 LINEAR_LOW, LINEAR_HIGH
         ).getRandomSamples(random, NUM_PARAM_RANGE_SAMPLES);
-        final Double[] logSamples = new MachineLearningUtils.ClassifierLogParamRange(
+        final Double[] logSamples = new ClassifierParamRange.ClassifierLogParamRange(
                 LOG_LOW, LOG_HIGH
         ).getRandomSamples(random, NUM_PARAM_RANGE_SAMPLES);
-        final Integer[] linearIntSamples = new MachineLearningUtils.ClassifierIntegerLinearParamRange(
+        final Integer[] linearIntSamples = new ClassifierParamRange.ClassifierIntegerLinearParamRange(
                 LINEAR_INT_LOW, LINEAR_INT_HIGH
         ).getRandomSamples(random, NUM_PARAM_RANGE_SAMPLES);
-        final Integer[] logIntSamples = new MachineLearningUtils.ClassifierIntegerLogParamRange(
+        final Integer[] logIntSamples = new ClassifierParamRange.ClassifierIntegerLogParamRange(
                 LOG_INT_LOW, LOG_INT_HIGH
         ).getRandomSamples(random, NUM_PARAM_RANGE_SAMPLES);
 
@@ -377,25 +377,25 @@ public class MachineLearningUtilsUnitTest extends GATKBaseTest {
         assertArraysNotEqual(linearIntPermutation, logIntPermutation, "Permuations repeated, parameter space will not be evenly sampled");
 
         // check InvalidArguments
-        assertBadParamRangeThrowsException(LINEAR_HIGH, LINEAR_LOW, MachineLearningUtils.ClassifierLinearParamRange.class,
+        assertBadParamRangeThrowsException(LINEAR_HIGH, LINEAR_LOW, ClassifierParamRange.ClassifierLinearParamRange.class,
                 IllegalArgumentException.class, "ClassifierParamRange with low > high should throw IllegalArgumentException");
-        assertBadParamRangeThrowsException(LOG_HIGH, LOG_LOW, MachineLearningUtils.ClassifierLogParamRange.class,
+        assertBadParamRangeThrowsException(LOG_HIGH, LOG_LOW, ClassifierParamRange.ClassifierLogParamRange.class,
                 IllegalArgumentException.class, "ClassifierParamRange with low > high should throw IllegalArgumentException");
-        assertBadParamRangeThrowsException(LINEAR_INT_HIGH, LINEAR_INT_LOW, MachineLearningUtils.ClassifierIntegerLinearParamRange.class,
+        assertBadParamRangeThrowsException(LINEAR_INT_HIGH, LINEAR_INT_LOW, ClassifierParamRange.ClassifierIntegerLinearParamRange.class,
                 IllegalArgumentException.class, "ClassifierParamRange with low > high should throw IllegalArgumentException");
-        assertBadParamRangeThrowsException(LOG_INT_HIGH, LOG_INT_LOW, MachineLearningUtils.ClassifierIntegerLogParamRange.class,
+        assertBadParamRangeThrowsException(LOG_INT_HIGH, LOG_INT_LOW, ClassifierParamRange.ClassifierIntegerLogParamRange.class,
                 IllegalArgumentException.class, "ClassifierParamRange with low > high should throw IllegalArgumentException");
-        assertBadParamRangeThrowsException(-LOG_HIGH, LOG_LOW, MachineLearningUtils.ClassifierLogParamRange.class,
+        assertBadParamRangeThrowsException(-LOG_HIGH, LOG_LOW, ClassifierParamRange.ClassifierLogParamRange.class,
                 IllegalArgumentException.class, "Log-distributed ClassifierParamRange with low and high of different signs should throw IllegalArgumentException");
-        assertBadParamRangeThrowsException(0.0, LOG_LOW, MachineLearningUtils.ClassifierLogParamRange.class,
+        assertBadParamRangeThrowsException(0.0, LOG_LOW, ClassifierParamRange.ClassifierLogParamRange.class,
                 IllegalArgumentException.class, "Log-distributed ClassifierParamRange with low and high of different signs should throw IllegalArgumentException");
-        assertBadParamRangeThrowsException(-LOG_INT_HIGH, LOG_INT_LOW, MachineLearningUtils.ClassifierIntegerLogParamRange.class,
+        assertBadParamRangeThrowsException(-LOG_INT_HIGH, LOG_INT_LOW, ClassifierParamRange.ClassifierIntegerLogParamRange.class,
                 IllegalArgumentException.class, "Log-distributed ClassifierParamRange with low and high of different signs should throw IllegalArgumentException");
-        assertBadParamRangeThrowsException(0, LOG_INT_HIGH, MachineLearningUtils.ClassifierIntegerLogParamRange.class,
+        assertBadParamRangeThrowsException(0, LOG_INT_HIGH, ClassifierParamRange.ClassifierIntegerLogParamRange.class,
                 IllegalArgumentException.class, "Log-distributed ClassifierParamRange with low and high of different signs should throw IllegalArgumentException");
     }
 
-    private static <R extends MachineLearningUtils.ClassifierParamRange<Double>, E extends Exception>
+    private static <R extends ClassifierParamRange<Double>, E extends Exception>
     void assertBadParamRangeThrowsException(final Double low, final Double high, Class<R> clazz, Class<E> exceptionClazz,
                                             final String message) {
         try {
@@ -408,7 +408,7 @@ public class MachineLearningUtilsUnitTest extends GATKBaseTest {
             }
         }
     }
-    private static <R extends MachineLearningUtils.ClassifierParamRange<Integer>, E extends Exception>
+    private static <R extends ClassifierParamRange<Integer>, E extends Exception>
     void assertBadParamRangeThrowsException(final Integer low, final Integer high, Class<R> clazz, Class<E> exceptionClazz,
                                             final String message) {
         try {
@@ -498,41 +498,41 @@ public class MachineLearningUtilsUnitTest extends GATKBaseTest {
         }
     }
 
-    private static void assertGoodSplit(final MachineLearningUtils.TrainTestSplit split, final int numElements,
+    private static void assertGoodSplit(final TrainTestSplit split, final int numElements,
                                         final double trainingFraction, final int[] stratify) {
         // first check if the split is trivial
         if(trainingFraction == 0.0) {
-            assertEmpty(split.trainRows, "trainRows should be empty");
-            assertArrayEquals(split.testRows, MachineLearningUtils.getRange(numElements),
+            assertEmpty(split.getTrainRows(), "trainRows should be empty");
+            assertArrayEquals(split.getTestRows(), MachineLearningUtils.getRange(numElements),
                     "testRows should be all elements");
             return;
         } else if(trainingFraction == 1.0) {
-            assertEmpty(split.testRows, "testRows should be empty");
-            assertArrayEquals(split.trainRows, MachineLearningUtils.getRange(numElements),
+            assertEmpty(split.getTestRows(), "testRows should be empty");
+            assertArrayEquals(split.getTrainRows(), MachineLearningUtils.getRange(numElements),
                     "trainRows should be all elements");
             return;
         }
 
         // next check that it *is* a split
-        Assert.assertEquals(split.testRows.length + split.trainRows.length, numElements,
+        Assert.assertEquals(split.getTestRows().length + split.getTrainRows().length, numElements,
                 "number of trainRows + number of testRows != number of elements");
-        assertArraysDisjoint(split.testRows, split.trainRows, "trainRows and testRows have overlap");
-        final IntSummaryStatistics trainStats = Arrays.stream(split.trainRows).summaryStatistics();
-        final IntSummaryStatistics testStats = Arrays.stream(split.testRows).summaryStatistics();
+        assertArraysDisjoint(split.getTestRows(), split.getTrainRows(), "trainRows and testRows have overlap");
+        final IntSummaryStatistics trainStats = Arrays.stream(split.getTrainRows()).summaryStatistics();
+        final IntSummaryStatistics testStats = Arrays.stream(split.getTestRows()).summaryStatistics();
         final int minIndex = Math.min(trainStats.getMin(), testStats.getMin());
         final int maxIndex = Math.max(trainStats.getMax(), testStats.getMax());
         Assert.assertEquals(minIndex, 0, "split contains indices less than 0");
         Assert.assertEquals(maxIndex, numElements - 1, "split contains indices past end of data");
 
         // finally check balance of division
-        Assert.assertEquals(split.trainRows.length, trainingFraction * numElements, 2,
+        Assert.assertEquals(split.getTrainRows().length, trainingFraction * numElements, 2,
                 "Number of training rows differs from expected by more than 2");
         if(stratify != null) {
             // check balance of division for each stratify value
             final double[] expectedStratifyCounts = Arrays.stream(
                     getStratifyCounts(stratify)
             ).mapToDouble(c -> c * trainingFraction).toArray();
-            final int[] trainStratifyCounts = getStratifyCounts(MachineLearningUtils.slice(stratify, split.trainRows));
+            final int[] trainStratifyCounts = getStratifyCounts(MachineLearningUtils.slice(stratify, split.getTrainRows()));
             assertArrayEquals(trainStratifyCounts, expectedStratifyCounts, 2,
                     "split wasn't properly balanced for stratify");
         }
