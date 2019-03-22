@@ -57,6 +57,9 @@ task PathSeqFilter {
 
   File? gatk4_jar_override
 
+  # Default to WARNING which will avoid excessive Spark logging
+  String verbosity = "WARNING"
+
   # Runtime parameters
   String gatk_docker
   Int mem_gb = 32
@@ -80,8 +83,8 @@ task PathSeqFilter {
       --input ${input_bam_or_cram} \
       --paired-output ${paired_bam_output_path} \
       --unpaired-output ${unpaired_bam_output_path} \
-      ~{if defined(cram_reference_fasta) then "--reference ${cram_reference_fasta}" else ""} \
-      ~{if gather_metrics then "--filter-metrics ${filter_metrics_output_path}" else ""} \
+      ${if defined(cram_reference_fasta) then "--reference ${cram_reference_fasta}" else ""} \
+      ${if gather_metrics then "--filter-metrics ${filter_metrics_output_path}" else ""} \
       --kmer-file ${kmer_file} \
       --filter-bwa-image ${filter_bwa_image} \
       --bam-partition-size ${bam_partition_size} \
@@ -91,7 +94,8 @@ task PathSeqFilter {
       --filter-bwa-seed-length ${filter_bwa_seed_length} \
       --host-min-identity ${host_min_identity} \
       --filter-duplicates ${filter_duplicates} \
-      --skip-pre-bwa-repartition ${skip_pre_bwa_repartition}
+      --skip-pre-bwa-repartition ${skip_pre_bwa_repartition} \
+      --verbosity ${verbosity}
 
     if [ ! -f "${paired_bam_output_path}" ]; then
     	echo "File ${paired_bam_output_path} not found, creating empty BAM"
@@ -133,6 +137,9 @@ task PathSeqAlign {
 
   File? gatk4_jar_override
 
+  # Default to WARNING which will avoid excessive Spark logging
+  String verbosity = "WARNING"
+
   # Runtime parameters
   String gatk_docker
   Int mem_gb = 140
@@ -157,7 +164,8 @@ task PathSeqAlign {
       --paired-output ${paired_bam_output_path} \
       --unpaired-output ${unpaired_bam_output_path} \
       --microbe-bwa-image ${microbe_bwa_image} \
-      --microbe-dict ${microbe_dict}
+      --microbe-dict ${microbe_dict} \
+      --verbosity ${verbosity}
   >>>
   runtime {
     docker: gatk_docker
