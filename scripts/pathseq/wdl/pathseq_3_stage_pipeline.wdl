@@ -95,7 +95,8 @@ task PathSeqFilter {
       --host-min-identity ${host_min_identity} \
       --filter-duplicates ${filter_duplicates} \
       --skip-pre-bwa-repartition ${skip_pre_bwa_repartition} \
-      --verbosity ${verbosity}
+      --verbosity ${verbosity} \
+      --spark-verbosity WARN
 
     if [ ! -f "${paired_bam_output_path}" ]; then
     	echo "File ${paired_bam_output_path} not found, creating empty BAM"
@@ -165,7 +166,8 @@ task PathSeqAlign {
       --unpaired-output ${unpaired_bam_output_path} \
       --microbe-bwa-image ${microbe_bwa_image} \
       --microbe-dict ${microbe_dict} \
-      --verbosity ${verbosity}
+      --verbosity ${verbosity} \
+      --spark-verbosity WARN
   >>>
   runtime {
     docker: gatk_docker
@@ -259,6 +261,7 @@ workflow PathSeqThreeStageWorkflow {
   File microbe_dict
   File taxonomy_file
 
+  Boolean gather_filter_metrics = false
   Boolean is_host_aligned
   Boolean? filter_duplicates
   Boolean? skip_pre_bwa_repartition
@@ -305,6 +308,7 @@ workflow PathSeqThreeStageWorkflow {
       cram_reference_dict = cram_reference_dict,
       kmer_file=kmer_file,
       filter_bwa_image=filter_bwa_image,
+      gather_metrics=gather_filter_metrics,
       is_host_aligned=is_host_aligned,
       filter_duplicates=filter_duplicates,
       min_clipped_read_length=min_clipped_read_length,

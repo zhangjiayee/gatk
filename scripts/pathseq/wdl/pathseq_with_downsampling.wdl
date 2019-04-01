@@ -34,8 +34,10 @@ task Downsample {
 
   Int reads_after_downsampling
 
-  Int disk_size_gb
+  Int additional_disk_gb = 20
   Int preemptible_tries
+
+  Int disk_size = ceil(size(input_bam_file, "GB")*2 + additional_disk_gb)
 
   command <<<
     set -e
@@ -47,6 +49,7 @@ task Downsample {
     then
         P_DOWNSAMPLE="1"
     fi
+    echo $NUM_READS > num_reads.txt
     java -Xmx2000m -jar /usr/gitc/picard.jar \
       DownsampleSam \
       INPUT=${input_bam_file} \
@@ -55,29 +58,32 @@ task Downsample {
   >>>
   output {
     File output_bam_file = "${downsampled_bam_filename}"
+    Int total_reads = read_tsv("num_reads.txt")[0][0]
   }
   runtime {
     preemptible: "${preemptible_tries}"
     docker: "us.gcr.io/broad-gotc-prod/genomes-in-the-cloud:2.2.5-1486412288"
-    memory: "3.75 GB"
+    memory: "3.75 GiB"
     cpu: "1"
-    disks: "local-disk ${disk_size_gb} HDD"
+    disks: "local-disk ${disk_size} HDD"
   }
 }
 
-workflow EstimateMetricsPathseq {
+workflow PathSeqFilterWithDownsampling {
 
   String sample_name
   File input_bam
   File input_bam_index
-  Int? reads_after_downsampling
+  Int reads_after_downsampling
 
   File kmer_file
   File filter_bwa_image
 
+  Boolean? gather_filter_metrics
   Boolean is_host_aligned
   Boolean? filter_duplicates
   Boolean? skip_pre_bwa_repartition
+  Int? filter_bam_partition_size
   Int? filter_bwa_seed_length
   Int? host_min_identity
   Int? min_clipped_read_length
@@ -86,19 +92,16 @@ workflow EstimateMetricsPathseq {
 
   # Runtime parameters
   String gatk_docker
-  Int? preemptible_attempts
-  Int? cpu
-  Int? filter_bam_partition_size
+
+  Int? downsample_preemptible_attempts
+  Int? filter_preemptible_attempts
+  Int? filter_cpu
   Int? filter_mem_gb
+  Boolean? filter_ssd
 
   # Optional input to increase all disk sizes in case of outlier sample with strange size behavior
-  Int? increase_disk_size
-
-  # Some tasks need wiggle room, and we also need to add a small amount of disk to prevent getting a
-  # Cromwell error from asking for 0 disk when the input is less than 1GB.
-  # Also Spark requires some temporary storage.
-  Int additional_disk = select_first([increase_disk_size, 20])
-  Float downsample_disk_space_gb = size(input_bam, "GB") + additional_disk
+  Int? downsample_additional_disk_gb
+  Int? filter_additional_disk_gb
 
   # Downsample input bam
   call Downsample {
@@ -106,18 +109,18 @@ workflow EstimateMetricsPathseq {
       input_bam_file=input_bam,
       input_bam_index_file=input_bam_index,
       downsampled_bam_filename="${sample_name}.downsampled.bam",
-      reads_after_downsampling=select_first([reads_after_downsampling, 100000]),
-      disk_size_gb=downsample_disk_space_gb,
-      preemptible_tries=preemptible_attempts
+      reads_after_downsampling=reads_after_downsampling,
+      additional_disk_gb=downsample_additional_disk_gb,
+      preemptible_tries=downsample_preemptible_attempts
   }
 
-  Float filter_disk_space_gb = 2*size(Downsample.output_bam_file, "GB") + size(kmer_file, "GB") + size(filter_bwa_image, "GB") + additional_disk
-  call pathseq_pipeline.PathSeqThreeStageWorkflow {
+  call pathseq_pipeline.PathSeqFilter {
     input:
       sample_name=sample_name,
-      input_bam=Downsample.output_bam_file,
+      input_bam_or_cram=Downsample.output_bam_file,
       kmer_file=kmer_file,
       filter_bwa_image=filter_bwa_image,
+      gather_metrics=gather_filter_metrics,
       is_host_aligned=is_host_aligned,
       filter_duplicates=filter_duplicates,
       min_clipped_read_length=min_clipped_read_length,
@@ -125,14 +128,16 @@ workflow EstimateMetricsPathseq {
       host_min_identity=host_min_identity,
       filter_bwa_seed_length=filter_bwa_seed_length,
       gatk4_jar_override=gatk4_jar_override,
-      mem_gb=filter_mem_gb,
       gatk_docker=gatk_docker,
-      preemptible_attempts=preemptible_attempts,
-      disk_space_gb=filter_disk_space_gb,
-      cpu=cpu
+      preemptible_attempts=filter_preemptible_attempts,
+      mem_gb=filter_mem_gb,
+      cpu=filter_cpu,
+      use_ssd=filter_ssd,
+      additional_disk_gb=filter_additional_disk_gb
   }
 
   output {
-    File metrics = PathseqFilter.outputFilterMetricsFile
+    File filter_metrics = PathSeqFilter.filter_metrics
+    Int original_total_reads = Downsample.total_reads
   }
 }

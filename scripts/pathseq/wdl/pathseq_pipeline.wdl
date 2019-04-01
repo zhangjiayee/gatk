@@ -26,173 +26,138 @@
 ##
 ########################################################################################################################
 
-task PathseqPipeline {
+import "pathseq_3_stage_pipeline.wdl" as pathseq_pipeline
+import "pathseq_with_downsampling.wdl" as pathseq_downsample
 
-  # Inputs for this task
+workflow PathSeqPipeline {
+
   String sample_name
   File input_bam
+  File input_bam_index = input_bam + ".bai"
+
+  # Number of reads to downsample to for estimating filter metrics
+  Int filter_metrics_reads = 1000000
 
   File kmer_file
   File filter_bwa_image
   File microbe_bwa_image
-  File microbe_fasta
-  File microbe_fasta_dict
-  File taxonomy_file
-
-  Boolean is_host_aligned
-  Boolean? skip_quality_filters
-  Boolean? filter_duplicates
-  Boolean? skip_pre_bwa_repartition
-  Boolean? divide_by_genome_length
-  Int? filter_bwa_seed_length
-  Int? host_min_identity
-  Int? min_clipped_read_length
-  Int? bam_partition_size
-  Float? min_score_identity
-  Float? identity_margin
-
-  String bam_output_path = "${sample_name}.pathseq.bam"
-  String scores_output_path = "${sample_name}.pathseq.tsv"
-  String filter_metrics_output_path = "${sample_name}.pathseq.filter_metrics"
-  String score_metrics_output_path = "${sample_name}.pathseq.score_metrics"
-
-  File? gatk4_jar_override
-
-  # Runtime parameters
-  Int? mem_gb
-  String gatk_docker
-  Int? preemptible_attempts
-  Int? disk_space_gb
-  Int? cpu
-  Boolean use_ssd = true
-
-  # You may have to change the following two parameter values depending on the task requirements
-  Int default_ram_mb = 208000
-  # WARNING: In the workflow, you should calculate the disk space as an input to this task (disk_space_gb).
-  Int default_disk_space_gb = 400
-  # Mem is in units of GB but our command and memory runtime values are in MB
-  Int machine_mem = if defined(mem_gb) then mem_gb *1000 else default_ram_mb
-  Int command_mem = machine_mem - 4000
-
-  Float default_min_score_identity = 0.9
-  Float default_identity_margin = 0.02
-
-  command <<<
-    set -e
-    export GATK_LOCAL_JAR=${default="/root/gatk.jar" gatk4_jar_override}
-      gatk --java-options "-Xmx${command_mem}m" \
-      PathSeqPipelineSpark \
-      --input ${input_bam} \
-      --output ${bam_output_path} \
-      --scores-output ${scores_output_path} \
-      --filter-metrics ${filter_metrics_output_path} \
-      --score-metrics ${score_metrics_output_path} \
-      --kmer-file ${kmer_file} \
-      --filter-bwa-image ${filter_bwa_image} \
-      --microbe-bwa-image ${microbe_bwa_image} \
-      --microbe-fasta ${microbe_fasta} \
-      --taxonomy-file ${taxonomy_file} \
-      --bam-partition-size ${select_first([bam_partition_size, 4000000])} \
-      --is-host-aligned ${is_host_aligned} \
-      --skip-quality-filters ${select_first([skip_quality_filters, false])} \
-      --min-clipped-read-length ${select_first([min_clipped_read_length, 60])} \
-      --filter-bwa-seed-length ${select_first([filter_bwa_seed_length, 19])} \
-      --host-min-identity ${select_first([host_min_identity, 30])} \
-      --filter-duplicates ${select_first([filter_duplicates, true])} \
-      --skip-pre-bwa-repartition ${select_first([skip_pre_bwa_repartition, false])} \
-      --min-score-identity ${select_first([min_score_identity, default_min_score_identity])} \
-      --identity-margin ${select_first([identity_margin, default_identity_margin])} \
-      --divide-by-genome-length ${select_first([divide_by_genome_length, true])}
-  >>>
-  runtime {
-    docker: gatk_docker
-    memory: machine_mem + " MB"
-    # Note that the space before SSD and HDD should be included.
-    disks: "local-disk " + select_first([disk_space_gb, default_disk_space_gb]) + if use_ssd then " SSD" else " HDD"
-    preemptible: select_first([preemptible_attempts, 3])
-    cpu: select_first([cpu, 32])
-  }
-  output {
-    File bam_output_pathFile = "${sample_name}.pathseq.bam"
-    File outputScoresFile = "${sample_name}.pathseq.tsv"
-    File outputFilterMetricsFile = "${sample_name}.pathseq.filter_metrics"
-    File outputScoreMetricsFile = "${sample_name}.pathseq.score_metrics"
-  }
-}
-
-workflow PathSeqPipelineWorkflow {
-
-  String sample_name
-  File input_bam
-
-  File kmer_file
-  File filter_bwa_image
-  File microbe_bwa_image
-  File microbe_fasta
-  File microbe_fasta_dict
+  File microbe_dict
   File taxonomy_file
 
   Boolean is_host_aligned
   Boolean? filter_duplicates
   Boolean? skip_pre_bwa_repartition
-  Boolean? divide_by_genome_length
+  Int? filter_bam_partition_size
   Int? filter_bwa_seed_length
   Int? host_min_identity
   Int? min_clipped_read_length
-  Int? bam_partition_size
+
   Float? min_score_identity
   Float? identity_margin
+  Boolean? divide_by_genome_length
 
   File? gatk4_jar_override
 
   # Runtime parameters
-  Int? mem_gb
   String gatk_docker
-  Int? preemptible_attempts
-  Int? cpu
+
+  Int? downsample_preemptible_attempts
+  Int? downsample_filter_preemptible_attempts
+  Int? filter_preemptible_attempts
+  Int? align_preemptible_attempts
+  Int? score_preemptible_attempts
+
+  Int? downsample_filter_cpu
+  Int? filter_cpu
+  Int? align_cpu
+  Int? score_cpu
+
+  Int? downsample_filter_mem_gb
+  Int? filter_mem_gb
+  Int? align_mem_gb
+  Int? score_mem_gb
+
+  Boolean? downsample_filter_ssd
+  Boolean? filter_ssd
+  Boolean? align_ssd
+  Boolean? score_ssd
 
   # Optional input to increase all disk sizes in case of outlier sample with strange size behavior
-  Int? increase_disk_size
+  Int? downsample_additional_disk_gb
+  Int? downsample_filter_additional_disk_gb
+  Int? filter_additional_disk_gb
+  Int? align_additional_disk_gb
+  Int? score_additional_disk_gb
 
-  # Some tasks need wiggle room, and we also need to add a small amount of disk to prevent getting a
-  # Cromwell error from asking for 0 disk when the input is less than 1GB.
-  # Also Spark requires some temporary storage.
-  Int additional_disk = select_first([increase_disk_size, 20])
-
-  # Disk sizes for Downsample and PathSeq tasks
-  Float disk_space_gb = size(input_bam, "GB") + size(kmer_file, "GB") + size(filter_bwa_image, "GB") + size(microbe_bwa_image, "GB") + size(microbe_fasta, "GB") + additional_disk
-
-  call PathseqPipeline {
+  call pathseq_downsample.PathSeqFilterWithDownsampling {
     input:
       sample_name=sample_name,
       input_bam=input_bam,
+      reads_after_downsampling=filter_metrics_reads,
       kmer_file=kmer_file,
       filter_bwa_image=filter_bwa_image,
-      microbe_bwa_image=microbe_bwa_image,
-      microbe_fasta=microbe_fasta,
-      microbe_fasta_dict=microbe_fasta_dict,
-      taxonomy_file=taxonomy_file,
       is_host_aligned=is_host_aligned,
+      gather_filter_metrics=true,
       filter_duplicates=filter_duplicates,
-      skip_pre_bwa_repartition=skip_pre_bwa_repartition,
-      divide_by_genome_length=divide_by_genome_length,
       min_clipped_read_length=min_clipped_read_length,
-      bam_partition_size=bam_partition_size,
-      min_score_identity=min_score_identity,
-      identity_margin=identity_margin,
+      filter_bam_partition_size=filter_bam_partition_size,
       host_min_identity=host_min_identity,
       filter_bwa_seed_length=filter_bwa_seed_length,
       gatk4_jar_override=gatk4_jar_override,
-      mem_gb=mem_gb,
+      filter_mem_gb=filter_mem_gb,
       gatk_docker=gatk_docker,
-      preemptible_attempts=preemptible_attempts,
-      disk_space_gb=disk_space_gb,
-      cpu=cpu
+      filter_preemptible_attempts=downsample_filter_preemptible_attempts,
+      filter_cpu=downsample_filter_cpu,
+      filter_mem_gb=downsample_filter_mem_gb,
+      filter_ssd=downsample_filter_ssd,
+      filter_additional_disk_gb=downsample_filter_additional_disk_gb
   }
+
+  call pathseq_pipeline.PathSeqThreeStageWorkflow {
+    input:
+      sample_name=sample_name,
+      input_bam_or_cram=input_bam,
+      kmer_file=kmer_file,
+      filter_bwa_image=filter_bwa_image,
+      microbe_bwa_image=microbe_bwa_image,
+      microbe_dict=microbe_dict,
+      taxonomy_file=taxonomy_file,
+      gather_filter_metrics=false,
+      is_host_aligned=is_host_aligned,
+      filter_duplicates=filter_duplicates,
+      min_clipped_read_length=min_clipped_read_length,
+      filter_bam_partition_size=filter_bam_partition_size,
+      host_min_identity=host_min_identity,
+      filter_bwa_seed_length=filter_bwa_seed_length,
+      min_score_identity=min_score_identity,
+      identity_margin=identity_margin,
+      divide_by_genome_length=divide_by_genome_length,
+      gatk4_jar_override=gatk4_jar_override,
+      filter_mem_gb=filter_mem_gb,
+      gatk_docker=gatk_docker,
+      filter_preemptible_attempts=filter_preemptible_attempts,
+      align_preemptible_attempts=align_preemptible_attempts,
+      score_preemptible_attempts=score_preemptible_attempts,
+      filter_cpu=filter_cpu,
+      align_cpu=align_cpu,
+      score_cpu=score_cpu,
+      filter_mem_gb=filter_mem_gb,
+      align_mem_gb=align_mem_gb,
+      score_mem_gb=score_mem_gb,
+      filter_ssd=filter_ssd,
+      align_ssd=align_ssd,
+      score_ssd=score_ssd,
+      filter_additional_disk_gb=filter_additional_disk_gb,
+      align_additional_disk_gb=align_additional_disk_gb,
+      score_additional_disk_gb=score_additional_disk_gb
+  }
+
   output {
-    File pathseqBam = PathseqPipeline.bam_output_pathFile
-    File pathseqScores = PathseqPipeline.outputScoresFile
-    File pathseqFilterMetrics = PathseqPipeline.outputFilterMetricsFile
-    File pathseqScoreMetrics = PathseqPipeline.outputScoreMetricsFile
+    File final_bam = PathSeqThreeStageWorkflow.final_bam
+    File scores = PathSeqThreeStageWorkflow.scores
+    File score_metrics = PathSeqThreeStageWorkflow.score_metrics
+
+    File downsampled_filter_metrics = PathSeqFilterWithDownsampling.filter_metrics
+    Int original_total_reads = PathSeqFilterWithDownsampling.original_total_reads
   }
 }
