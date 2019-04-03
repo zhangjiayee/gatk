@@ -26,49 +26,6 @@
 
 import "pathseq_3_stage_pipeline.wdl" as pathseq_pipeline
 
-# Downsamples BAM to a specified number of reads
-task Downsample {
-  File input_bam_file
-  File input_bam_index_file
-  String downsampled_bam_filename
-
-  Int reads_after_downsampling
-
-  Int additional_disk_gb = 20
-  Int preemptible_tries
-
-  Int disk_size = ceil(size(input_bam_file, "GB")*2 + additional_disk_gb)
-
-  command <<<
-    set -e
-    set -o pipefail
-    NUM_READS=`samtools idxstats ${input_bam_file} | awk '{s+=$3+$4} END {print s}'`
-    P_DOWNSAMPLE=`python -c "print ${reads_after_downsampling}/float($NUM_READS)"`
-    RESULT=`python -c "print $P_DOWNSAMPLE > 1"`
-    if [ "$RESULT" == "True" ]
-    then
-        P_DOWNSAMPLE="1"
-    fi
-    echo $NUM_READS > num_reads.txt
-    java -Xmx2000m -jar /usr/gitc/picard.jar \
-      DownsampleSam \
-      INPUT=${input_bam_file} \
-      OUTPUT=${downsampled_bam_filename} \
-      P=$P_DOWNSAMPLE
-  >>>
-  output {
-    File output_bam_file = "${downsampled_bam_filename}"
-    Int total_reads = read_tsv("num_reads.txt")[0][0]
-  }
-  runtime {
-    preemptible: "${preemptible_tries}"
-    docker: "us.gcr.io/broad-gotc-prod/genomes-in-the-cloud:2.2.5-1486412288"
-    memory: "3.75 GiB"
-    cpu: "1"
-    disks: "local-disk ${disk_size} HDD"
-  }
-}
-
 workflow PathSeqFilterWithDownsampling {
 
   String sample_name
@@ -139,5 +96,49 @@ workflow PathSeqFilterWithDownsampling {
   output {
     File filter_metrics = PathSeqFilter.filter_metrics
     Int original_total_reads = Downsample.total_reads
+  }
+}
+
+# Downsamples BAM to a specified number of reads
+task Downsample {
+  File input_bam_file
+  File input_bam_index_file
+  String downsampled_bam_filename
+
+  Int reads_after_downsampling
+
+  Int additional_disk_gb = 20
+  Int preemptible_tries = 3
+
+  Int disk_size = ceil(size(input_bam_file, "GB")*2 + additional_disk_gb)
+
+  command <<<
+    set -e
+    set -o pipefail
+    NUM_READS=`samtools idxstats ${input_bam_file} | awk '{s+=$3+$4} END {print s}'`
+    P_DOWNSAMPLE=`python -c "print ${reads_after_downsampling}/float($NUM_READS)"`
+    RESULT=`python -c "print $P_DOWNSAMPLE > 1"`
+    if [ "$RESULT" == "True" ]
+    then
+        P_DOWNSAMPLE="1"
+    fi
+    echo $NUM_READS > num_reads.txt
+    java -Xmx2000m -jar /usr/gitc/picard.jar \
+      DownsampleSam \
+      INPUT=${input_bam_file} \
+      OUTPUT=${downsampled_bam_filename} \
+      P=$P_DOWNSAMPLE \
+      VALIDATION_STRINGENCY=SILENT
+  >>>
+  output {
+    File output_bam_file = "${downsampled_bam_filename}"
+    Int total_reads = read_int("num_reads.txt")
+  }
+  runtime {
+    preemptible: "${preemptible_tries}"
+    docker: "us.gcr.io/broad-gotc-prod/genomes-in-the-cloud:2.2.5-1486412288"
+    memory: "3.75 GiB"
+    cpu: "1"
+    disks: "local-disk ${disk_size} HDD"
   }
 }

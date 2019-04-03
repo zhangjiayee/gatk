@@ -26,6 +26,297 @@
 ##
 ########################################################################################################################
 
+
+workflow PathSeqPipeline {
+
+  String sample_name
+  File input_bam_or_cram
+  File? input_bam_or_cram_index
+
+  # If enabled, filter metrics will be estimated using a downsampled bam with this many reads (recommended)
+  # If disabled, no filter metrics will be generated
+  Boolean estimate_filter_metrics_with_downsampling = true
+  Int estimate_filter_metrics_reads = 1000000
+
+  # Required if the input is a cram
+  File? cram_reference_fasta
+  File? cram_reference_fasta_index
+  File? cram_reference_dict
+
+  File kmer_file
+  File filter_bwa_image
+  File microbe_bwa_image
+  File microbe_dict
+  File taxonomy_file
+
+  Boolean is_host_aligned
+  Boolean? filter_duplicates
+  Boolean? skip_pre_bwa_repartition
+  Int? filter_bam_partition_size
+  Boolean? divide_by_genome_length
+  Int? filter_bwa_seed_length
+  Int? host_min_identity
+  Int? min_clipped_read_length
+  Float? min_score_identity
+  Float? identity_margin
+
+  File? gatk4_jar_override
+
+  # Runtime parameters
+  String gatk_docker
+
+  Int? cram_to_bam_preemptible_attempts
+  Int? downsample_preemptible_attempts
+  Int? filter_preemptible_attempts
+  Int? align_preemptible_attempts
+  Int? score_preemptible_attempts
+
+  Int? cram_to_bam_cpu
+  Int? filter_cpu
+  Int? align_cpu
+  Int? score_cpu
+
+  Float? cram_to_bam_mem_gb
+  Int? filter_mem_gb
+  Int? align_mem_gb
+  Int? score_mem_gb
+
+  Boolean? filter_ssd
+  Boolean? align_ssd
+  Boolean? score_ssd
+
+  Int? cram_to_bam_max_retries
+
+  # Optional input to increase all disk sizes in case of outlier sample with strange size behavior
+  Int? cram_to_bam_additional_disk_gb
+  Int? downsample_additional_disk_gb
+  Int? filter_additional_disk_gb
+  Int? align_additional_disk_gb
+  Int? score_additional_disk_gb
+
+  Boolean is_bam = basename(input_bam_or_cram, ".bam") + ".bam" == basename(input_bam_or_cram)
+  String index_ext = if is_bam then ".bai" else ".crai"
+  File bam_or_cram_index = if defined(input_bam_or_cram_index) then select_first([input_bam_or_cram_index]) else input_bam_or_cram + index_ext
+
+  # Convert to BAM if we have a CRAM
+  if (!is_bam) {
+    call CramToBam {
+      input:
+        cram_file = input_bam_or_cram,
+        cram_index = bam_or_cram_index,
+        reference_fasta = select_first([cram_reference_fasta]),
+        reference_index = select_first([cram_reference_fasta_index]),
+        docker = gatk_docker,
+        cpu = cram_to_bam_cpu,
+        mem_gb = cram_to_bam_mem_gb,
+        extra_disk_gb = cram_to_bam_additional_disk_gb,
+        preemptible = cram_to_bam_preemptible_attempts,
+        max_retries = cram_to_bam_max_retries,
+    }
+  }
+
+  File bam_file = select_first([CramToBam.bam_file, input_bam_or_cram])
+  File bam_index = select_first([CramToBam.bam_index, bam_or_cram_index])
+
+  if (estimate_filter_metrics_with_downsampling) {
+    # Downsample bam for filter metrics estimation
+    call Downsample as DownsampleFilterMetricsBam {
+      input:
+        input_bam_file=bam_file,
+        input_bam_index_file=bam_index,
+        downsampled_bam_filename="${sample_name}.downsampled.bam",
+        reads_after_downsampling=estimate_filter_metrics_reads,
+        additional_disk_gb=downsample_additional_disk_gb,
+        preemptible_tries=downsample_preemptible_attempts
+    }
+
+    call PathSeqFilter as GetDownsampledFilterMetrics {
+      input:
+        sample_name=sample_name,
+        input_bam_or_cram=DownsampleFilterMetricsBam.output_bam_file,
+        kmer_file=kmer_file,
+        filter_bwa_image=filter_bwa_image,
+        gather_metrics=true,
+        is_host_aligned=is_host_aligned,
+        filter_duplicates=filter_duplicates,
+        min_clipped_read_length=min_clipped_read_length,
+        bam_partition_size=filter_bam_partition_size,
+        host_min_identity=host_min_identity,
+        filter_bwa_seed_length=filter_bwa_seed_length,
+        skip_pre_bwa_repartition=skip_pre_bwa_repartition,
+        gatk4_jar_override=gatk4_jar_override,
+        mem_gb=filter_mem_gb,
+        gatk_docker=gatk_docker,
+        preemptible_attempts=filter_preemptible_attempts,
+        additional_disk_gb=filter_additional_disk_gb,
+        cpu=filter_cpu,
+        use_ssd=filter_ssd
+    }
+  }
+
+  call PathSeqFilter as PathSeqFilter {
+    input:
+      sample_name=sample_name,
+      input_bam_or_cram=bam_file,
+      kmer_file=kmer_file,
+      filter_bwa_image=filter_bwa_image,
+      gather_metrics=false,
+      is_host_aligned=is_host_aligned,
+      filter_duplicates=filter_duplicates,
+      min_clipped_read_length=min_clipped_read_length,
+      bam_partition_size=filter_bam_partition_size,
+      host_min_identity=host_min_identity,
+      filter_bwa_seed_length=filter_bwa_seed_length,
+      skip_pre_bwa_repartition=skip_pre_bwa_repartition,
+      gatk4_jar_override=gatk4_jar_override,
+      mem_gb=filter_mem_gb,
+      gatk_docker=gatk_docker,
+      preemptible_attempts=filter_preemptible_attempts,
+      additional_disk_gb=filter_additional_disk_gb,
+      cpu=filter_cpu,
+      use_ssd=filter_ssd
+  }
+
+  call PathSeqAlign {
+    input:
+      sample_name=sample_name,
+      input_paired_bam=PathSeqFilter.paired_bam_out,
+      input_unpaired_bam=PathSeqFilter.unpaired_bam_out,
+      microbe_bwa_image=microbe_bwa_image,
+      microbe_dict=microbe_dict,
+      gatk4_jar_override=gatk4_jar_override,
+      mem_gb=align_mem_gb,
+      gatk_docker=gatk_docker,
+      preemptible_attempts=align_preemptible_attempts,
+      additional_disk_gb=align_additional_disk_gb,
+      cpu=align_cpu,
+      use_ssd=align_ssd
+  }
+
+  call PathSeqScore {
+    input:
+      sample_name=sample_name,
+      input_paired_bam=PathSeqAlign.paired_bam_out,
+      input_unpaired_bam=PathSeqAlign.unpaired_bam_out,
+      taxonomy_file=taxonomy_file,
+      divide_by_genome_length=divide_by_genome_length,
+      min_score_identity=min_score_identity,
+      identity_margin=identity_margin,
+      gatk4_jar_override=gatk4_jar_override,
+      mem_gb=score_mem_gb,
+      gatk_docker=gatk_docker,
+      preemptible_attempts=score_preemptible_attempts,
+      additional_disk_gb=score_additional_disk_gb,
+      cpu=score_cpu,
+      use_ssd=score_ssd
+  }
+
+  output {
+    File final_bam = PathSeqScore.bam_out
+    File scores = PathSeqScore.scores
+    File filter_metrics = select_first([GetDownsampledFilterMetrics.filter_metrics, PathSeqFilter.filter_metrics])
+    File score_metrics = PathSeqScore.score_metrics
+  }
+}
+
+task CramToBam {
+  File cram_file
+  File? cram_index
+  File reference_fasta
+  File? reference_index
+
+  String docker
+
+  Int? cpu = 4
+  Float? mem_gb = 15
+  Int? extra_disk_gb = 10
+  Int? preemptible = 3
+  Int? max_retries = 1
+
+  String bam_file_name = basename(cram_file, ".cram") + ".bam"
+
+  File cram_index_file = select_first([cram_index, cram_file + ".crai"])
+  File reference_index_file = select_first([reference_index, reference_fasta + ".fai"])
+
+  Float cram_inflate_ratio = 3.0
+  Float cram_size = size(cram_file, "GiB")
+  Float cram_index_size = size(cram_index_file, "GiB")
+  Float bam_size = cram_inflate_ratio * cram_size
+  Float bam_index_size = cram_index_size
+  Float ref_size = size(reference_fasta, "GiB")
+  Float ref_index_size = size(reference_index_file, "GiB")
+  Int vm_disk_size = ceil(cram_size + cram_index_size + bam_size + bam_index_size + ref_size + ref_index_size + extra_disk_gb)
+
+  output {
+    File bam_file = bam_file_name
+    File bam_index = bam_file_name + ".bai"
+  }
+  command <<<
+
+        set -Eeuo pipefail
+
+        # covert cram to bam
+        samtools view  -@ ${cpu} -h -b -T "${reference_fasta}" -o "${bam_file_name}" "${cram_file}"
+
+        # index bam file
+        samtools index -@ ${cpu} "${bam_file_name}"
+
+  >>>
+  runtime {
+    cpu: 1
+    memory: mem_gb + " GiB"
+    disks: "local-disk " + vm_disk_size + " HDD"
+    bootDiskSizeGb: 10
+    docker: docker
+    preemptible: preemptible
+    maxRetries: max_retries
+  }
+}
+
+# Downsamples BAM to a specified number of reads
+task Downsample {
+  File input_bam_file
+  File input_bam_index_file
+  String downsampled_bam_filename
+
+  Int reads_after_downsampling
+
+  Int additional_disk_gb = 20
+  Int preemptible_tries = 3
+
+  Int disk_size = ceil(size(input_bam_file, "GB")*2 + additional_disk_gb)
+
+  command <<<
+    set -e
+    set -o pipefail
+    NUM_READS=`samtools idxstats ${input_bam_file} | awk '{s+=$3+$4} END {print s}'`
+    P_DOWNSAMPLE=`python -c "print ${reads_after_downsampling}/float($NUM_READS)"`
+    RESULT=`python -c "print $P_DOWNSAMPLE > 1"`
+    if [ "$RESULT" == "True" ]
+    then
+        P_DOWNSAMPLE="1"
+    fi
+    echo $NUM_READS > num_reads.txt
+    java -Xmx2000m -jar /usr/gitc/picard.jar \
+      DownsampleSam \
+      INPUT=${input_bam_file} \
+      OUTPUT=${downsampled_bam_filename} \
+      P=$P_DOWNSAMPLE \
+      VALIDATION_STRINGENCY=SILENT
+  >>>
+  output {
+    File output_bam_file = "${downsampled_bam_filename}"
+    Int total_reads = read_int("num_reads.txt")
+  }
+  runtime {
+    preemptible: "${preemptible_tries}"
+    docker: "us.gcr.io/broad-gotc-prod/genomes-in-the-cloud:2.2.5-1486412288"
+    memory: "3.75 GiB"
+    cpu: "1"
+    disks: "local-disk ${disk_size} HDD"
+  }
+}
+
 task PathSeqFilter {
 
   # Inputs for this task
@@ -95,8 +386,7 @@ task PathSeqFilter {
       --host-min-identity ${host_min_identity} \
       --filter-duplicates ${filter_duplicates} \
       --skip-pre-bwa-repartition ${skip_pre_bwa_repartition} \
-      --verbosity ${verbosity} \
-      --spark-verbosity WARN
+      --verbosity ${verbosity}
 
     if [ ! -f "${paired_bam_output_path}" ]; then
     	echo "File ${paired_bam_output_path} not found, creating empty BAM"
@@ -166,8 +456,7 @@ task PathSeqAlign {
       --unpaired-output ${unpaired_bam_output_path} \
       --microbe-bwa-image ${microbe_bwa_image} \
       --microbe-dict ${microbe_dict} \
-      --verbosity ${verbosity} \
-      --spark-verbosity WARN
+      --verbosity ${verbosity}
   >>>
   runtime {
     docker: gatk_docker
@@ -243,126 +532,5 @@ task PathSeqScore {
     File bam_out = "${sample_name}.pathseq.bam"
     File scores = "${sample_name}.pathseq.tsv"
     File score_metrics = "${sample_name}.pathseq.score_metrics"
-  }
-}
-
-workflow PathSeqThreeStageWorkflow {
-
-  String sample_name
-  File input_bam_or_cram
-
-  File? cram_reference_fasta
-  File? cram_reference_fasta_index
-  File? cram_reference_dict
-
-  File kmer_file
-  File filter_bwa_image
-  File microbe_bwa_image
-  File microbe_dict
-  File taxonomy_file
-
-  Boolean gather_filter_metrics = false
-  Boolean is_host_aligned
-  Boolean? filter_duplicates
-  Boolean? skip_pre_bwa_repartition
-  Int? filter_bam_partition_size
-  Boolean? divide_by_genome_length
-  Int? filter_bwa_seed_length
-  Int? host_min_identity
-  Int? min_clipped_read_length
-  Float? min_score_identity
-  Float? identity_margin
-
-  File? gatk4_jar_override
-
-  # Runtime parameters
-  String gatk_docker
-
-  Int? filter_preemptible_attempts
-  Int? align_preemptible_attempts
-  Int? score_preemptible_attempts
-
-  Int? filter_cpu
-  Int? align_cpu
-  Int? score_cpu
-
-  Int? filter_mem_gb
-  Int? align_mem_gb
-  Int? score_mem_gb
-
-  Boolean? filter_ssd
-  Boolean? align_ssd
-  Boolean? score_ssd
-
-  # Optional input to increase all disk sizes in case of outlier sample with strange size behavior
-  Int? filter_additional_disk_gb
-  Int? align_additional_disk_gb
-  Int? score_additional_disk_gb
-
-  call PathSeqFilter {
-    input:
-      sample_name=sample_name,
-      input_bam_or_cram=input_bam_or_cram,
-      cram_reference_fasta = cram_reference_fasta,
-      cram_reference_fasta_index = cram_reference_fasta_index,
-      cram_reference_dict = cram_reference_dict,
-      kmer_file=kmer_file,
-      filter_bwa_image=filter_bwa_image,
-      gather_metrics=gather_filter_metrics,
-      is_host_aligned=is_host_aligned,
-      filter_duplicates=filter_duplicates,
-      min_clipped_read_length=min_clipped_read_length,
-      bam_partition_size=filter_bam_partition_size,
-      host_min_identity=host_min_identity,
-      filter_bwa_seed_length=filter_bwa_seed_length,
-      skip_pre_bwa_repartition=skip_pre_bwa_repartition,
-      gatk4_jar_override=gatk4_jar_override,
-      mem_gb=filter_mem_gb,
-      gatk_docker=gatk_docker,
-      preemptible_attempts=filter_preemptible_attempts,
-      additional_disk_gb=filter_additional_disk_gb,
-      cpu=filter_cpu,
-      use_ssd=filter_ssd
-  }
-
-  call PathSeqAlign {
-    input:
-      sample_name=sample_name,
-      input_paired_bam=PathSeqFilter.paired_bam_out,
-      input_unpaired_bam=PathSeqFilter.unpaired_bam_out,
-      microbe_bwa_image=microbe_bwa_image,
-      microbe_dict=microbe_dict,
-      gatk4_jar_override=gatk4_jar_override,
-      mem_gb=align_mem_gb,
-      gatk_docker=gatk_docker,
-      preemptible_attempts=align_preemptible_attempts,
-      additional_disk_gb=align_additional_disk_gb,
-      cpu=align_cpu,
-      use_ssd=align_ssd
-  }
-
-  call PathSeqScore {
-    input:
-      sample_name=sample_name,
-      input_paired_bam=PathSeqAlign.paired_bam_out,
-      input_unpaired_bam=PathSeqAlign.unpaired_bam_out,
-      taxonomy_file=taxonomy_file,
-      divide_by_genome_length=divide_by_genome_length,
-      min_score_identity=min_score_identity,
-      identity_margin=identity_margin,
-      gatk4_jar_override=gatk4_jar_override,
-      mem_gb=score_mem_gb,
-      gatk_docker=gatk_docker,
-      preemptible_attempts=score_preemptible_attempts,
-      additional_disk_gb=score_additional_disk_gb,
-      cpu=score_cpu,
-      use_ssd=score_ssd
-  }
-
-  output {
-    File final_bam = PathSeqScore.bam_out
-    File scores = PathSeqScore.scores
-    File filter_metrics = PathSeqFilter.filter_metrics
-    File score_metrics = PathSeqScore.score_metrics
   }
 }

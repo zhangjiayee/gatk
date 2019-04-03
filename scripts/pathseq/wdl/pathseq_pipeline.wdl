@@ -89,10 +89,11 @@ workflow PathSeqPipeline {
   Int? align_additional_disk_gb
   Int? score_additional_disk_gb
 
-  call pathseq_downsample.PathSeqFilterWithDownsampling {
+  call pathseq_downsample.PathSeqFilterWithDownsampling as EstimateFilterMetrics {
     input:
       sample_name=sample_name,
       input_bam=input_bam,
+      input_bam_index=input_bam_index,
       reads_after_downsampling=filter_metrics_reads,
       kmer_file=kmer_file,
       filter_bwa_image=filter_bwa_image,
@@ -157,7 +158,7 @@ workflow PathSeqPipeline {
     File scores = PathSeqThreeStageWorkflow.scores
     File score_metrics = PathSeqThreeStageWorkflow.score_metrics
 
-    File downsampled_filter_metrics = PathSeqFilterWithDownsampling.filter_metrics
-    Int original_total_reads = PathSeqFilterWithDownsampling.original_total_reads
+    File downsampled_filter_metrics = EstimateFilterMetrics.filter_metrics
+    Int original_total_reads = EstimateFilterMetrics.original_total_reads
   }
 }
