@@ -74,15 +74,35 @@ workflow PathSeqPipeline {
   # This can be calculated from a downsampled run to help optimize disk allocation during filtering
   Float frac_non_host_reads = 1.0
 
+  # Filtering options
   Boolean? filter_duplicates
-  Boolean? skip_pre_bwa_repartition
-  Int? filter_bam_partition_size
-  Boolean? divide_by_genome_length
-  Int? filter_bwa_seed_length
   Int? host_min_identity
+  Int? host_kmer_threshold
+  Int? filter_bwa_seed_length
   Int? min_clipped_read_length
+  Int? max_masked_bases
+  Int? min_base_quality
+  Int? quality_threshold
+  Int? dust_mask_quality
+  Int? dust_window
+  Float? dust_t
+  Int? max_adapter_mistmatches
+  Int? min_adapter_length
+  Int? filter_reads_per_partition
+  Int? filter_bam_partition_size
+  Boolean? skip_pre_bwa_repartition
+
+  # Alignment options
+  Int? microbe_min_seed_length
+  Int? max_alternate_hits
+  Int? bwa_score_threshold
+
+  # Taxonomy scoring options
+  Boolean? divide_by_genome_length
   Float? min_score_identity
   Float? identity_margin
+  Boolean? not_normalized_by_kingdom
+  Int? score_reads_per_partition_estimate
 
   # Runtime parameters
   String gatk_docker
@@ -172,6 +192,16 @@ workflow PathSeqPipeline {
       bam_partition_size=filter_bam_partition_size,
       host_min_identity=host_min_identity,
       filter_bwa_seed_length=filter_bwa_seed_length,
+      max_masked_bases=max_masked_bases,
+      min_base_quality=min_base_quality,
+      quality_threshold=quality_threshold,
+      dust_mask_quality=dust_mask_quality,
+      dust_window=dust_window,
+      dust_t=dust_t,
+      host_kmer_threshold=host_kmer_threshold,
+      max_adapter_mistmatches=max_adapter_mistmatches,
+      min_adapter_length=min_adapter_length,
+      filter_reads_per_partition=filter_reads_per_partition,
       skip_pre_bwa_repartition=skip_pre_bwa_repartition,
       gatk4_jar_override=gatk4_jar_override,
       mem_gb=filter_mem_gb,
@@ -182,11 +212,13 @@ workflow PathSeqPipeline {
       use_ssd=filter_ssd
   }
 
-  call ProcessFilterMetrics {
-    input:
-      metrics_file=PathSeqFilter.filter_metrics,
-      preemptible_tries=process_filter_metrics_preemptible_attempts,
-      docker=linux_docker
+  if (gather_filter_metrics) {
+    call ProcessFilterMetrics {
+      input:
+        metrics_file=PathSeqFilter.filter_metrics,
+        preemptible_tries=process_filter_metrics_preemptible_attempts,
+        docker=linux_docker
+    }
   }
 
   if (!filtering_only) {
@@ -197,6 +229,9 @@ workflow PathSeqPipeline {
         input_unpaired_bam=PathSeqFilter.unpaired_bam_out,
         microbe_bwa_image=microbe_bwa_image,
         microbe_dict=microbe_dict,
+        microbe_min_seed_length=microbe_min_seed_length,
+        max_alternate_hits=max_alternate_hits,
+        bwa_score_threshold=bwa_score_threshold,
         gatk4_jar_override=gatk4_jar_override,
         mem_gb=align_mem_gb,
         gatk_docker=gatk_docker,
@@ -215,6 +250,8 @@ workflow PathSeqPipeline {
         divide_by_genome_length=divide_by_genome_length,
         min_score_identity=min_score_identity,
         identity_margin=identity_margin,
+        not_normalized_by_kingdom=not_normalized_by_kingdom,
+        score_reads_per_partition_estimate=score_reads_per_partition_estimate,
         gatk4_jar_override=gatk4_jar_override,
         mem_gb=score_mem_gb,
         gatk_docker=gatk_docker,
@@ -233,27 +270,32 @@ workflow PathSeqPipeline {
   }
 
   output {
-    File? final_bam = PathSeqScore.bam_out
+    # Filtered non-host reads
     File non_host_paired_bam = PathSeqFilter.paired_bam_out
     File non_host_unpaired_bam = PathSeqFilter.unpaired_bam_out
 
+    # Only generated if filtering_only=false
+    File? final_bam = PathSeqScore.bam_out
     File? taxonomy_scores = PathSeqScore.scores
     File? score_metrics_file = PathSeqScore.score_metrics
     Int? non_host_mapped_reads = ProcessScoreMetrics.non_host_mapped_reads
     Int? non_host_unmapped_reads = ProcessScoreMetrics.non_host_unmapped_reads
 
-    File filter_metrics_file = PathSeqFilter.filter_metrics
+    # Only generated if gather_filter_metrics=true
+    File? filter_metrics_file = ProcessFilterMetrics.metrics_file_out
+    Float? frac_after_prealigned_filter = ProcessFilterMetrics.frac_after_prealigned_filter
+    Float? frac_after_qual_cpx_filter = ProcessFilterMetrics.frac_after_qual_cpx_filter
+    Float? frac_after_host_filter = ProcessFilterMetrics.frac_after_host_filter
+    Float? frac_after_dedup = ProcessFilterMetrics.frac_after_dedup
+    Float? frac_non_host_paired = ProcessFilterMetrics.frac_final_paired
+    Float? frac_non_host_unpaired = ProcessFilterMetrics.frac_final_unpaired
+    Float? frac_non_host_total =ProcessFilterMetrics.frac_final_total
+    Float? frac_qual_cpx_filtered = ProcessFilterMetrics.frac_qual_cpx_filtered
+    Float? frac_host_filtered = ProcessFilterMetrics.frac_host_filtered
+    Float? frac_dup_filtered = ProcessFilterMetrics.frac_dup_filtered
+
+    # Only generated if downsample=true
     Int? total_reads = Downsample.total_reads
-    Float frac_after_prealigned_filter = ProcessFilterMetrics.frac_after_prealigned_filter
-    Float frac_after_qual_cpx_filter = ProcessFilterMetrics.frac_after_qual_cpx_filter
-    Float frac_after_host_filter = ProcessFilterMetrics.frac_after_host_filter
-    Float frac_after_dedup = ProcessFilterMetrics.frac_after_dedup
-    Float frac_non_host_paired = ProcessFilterMetrics.frac_final_paired
-    Float frac_non_host_unpaired = ProcessFilterMetrics.frac_final_unpaired
-    Float frac_non_host_total =ProcessFilterMetrics.frac_final_total
-    Float frac_qual_cpx_filtered = ProcessFilterMetrics.frac_qual_cpx_filtered
-    Float frac_host_filtered = ProcessFilterMetrics.frac_host_filtered
-    Float frac_dup_filtered = ProcessFilterMetrics.frac_dup_filtered
   }
 }
 
@@ -368,11 +410,8 @@ task PathSeqFilter {
   String sample_name
   File input_bam_or_cram
 
-  File kmer_file
-  File filter_bwa_image
-
-  # Optimizes disk space if provided
-  Float frac_non_host_reads = 1.0
+  File? kmer_file
+  File? filter_bwa_image
 
   # Required if cram is provided
   File? cram_reference_fasta
@@ -380,15 +419,27 @@ task PathSeqFilter {
   File? cram_reference_dict
 
   Boolean is_host_aligned
-  Boolean skip_quality_filters = false
-  Boolean skip_pre_bwa_repartition = false
-  Boolean filter_duplicates = true
-  Boolean gather_metrics = true
+  # Optimizes disk space if provided
+  Float frac_non_host_reads = 1.0
 
-  Int filter_bwa_seed_length = 19
-  Int host_min_identity = 30
-  Int min_clipped_read_length = 31
-  Int bam_partition_size = 4000000
+  Boolean? skip_quality_filters
+  Boolean? skip_pre_bwa_repartition
+  Boolean? filter_duplicates
+  Boolean? gather_metrics
+  Int? host_min_identity
+  Int? filter_bwa_seed_length
+  Int? min_clipped_read_length
+  Int? bam_partition_size
+  Int? max_masked_bases
+  Int? min_base_quality
+  Int? quality_threshold
+  Int? dust_mask_quality
+  Int? dust_window
+  Float? dust_t
+  Int? host_kmer_threshold
+  Int? max_adapter_mistmatches
+  Int? min_adapter_length
+  Int? filter_reads_per_partition
 
   String paired_bam_output_path = "${sample_name}.non_host.paired.bam"
   String unpaired_bam_output_path = "${sample_name}.non_host.unpaired.bam"
@@ -422,18 +473,28 @@ task PathSeqFilter {
       --input ${input_bam_or_cram} \
       --paired-output ${paired_bam_output_path} \
       --unpaired-output ${unpaired_bam_output_path} \
+      --is-host-aligned ${is_host_aligned} \
       ${if defined(cram_reference_fasta) then "--reference ${cram_reference_fasta}" else ""} \
       ${if gather_metrics then "--filter-metrics ${filter_metrics_output_path}" else ""} \
-      --kmer-file ${kmer_file} \
-      --filter-bwa-image ${filter_bwa_image} \
-      --bam-partition-size ${bam_partition_size} \
-      --is-host-aligned ${is_host_aligned} \
-      --skip-quality-filters ${skip_quality_filters} \
-      --min-clipped-read-length ${min_clipped_read_length} \
-      --filter-bwa-seed-length ${filter_bwa_seed_length} \
-      --host-min-identity ${host_min_identity} \
-      --filter-duplicates ${filter_duplicates} \
-      --skip-pre-bwa-repartition ${skip_pre_bwa_repartition} \
+      ${if defined(kmer_file) then "--kmer-file ${kmer_file}" else ""} \
+      ${if defined(filter_bwa_image) then "--filter-bwa-image ${filter_bwa_image}" else ""} \
+      ${if defined(bam_partition_size) then "--bam-partition-size ${bam_partition_size}" else ""} \
+      ${if defined(skip_quality_filters) then "--skip-quality-filters ${skip_quality_filters}" else ""}\
+      ${if defined(min_clipped_read_length) then "--min-clipped-read-length ${min_clipped_read_length}" else ""} \
+      ${if defined(max_masked_bases) then "--max-masked-bases ${max_masked_bases}" else ""} \
+      ${if defined(min_base_quality) then "--min-base-quality ${min_base_quality}" else ""} \
+      ${if defined(quality_threshold) then "--quality-threshold ${quality_threshold}" else ""} \
+      ${if defined(dust_mask_quality) then "--dust-mask-quality ${dust_mask_quality}" else ""} \
+      ${if defined(dust_window) then "--dust-window ${dust_window}" else ""} \
+      ${if defined(dust_t) then "--dust-t ${dust_t}" else ""} \
+      ${if defined(host_kmer_threshold) then "--host-kmer-thresh ${host_kmer_threshold}" else ""} \
+      ${if defined(max_adapter_mistmatches) then "--max-adapter-mismatches ${max_adapter_mistmatches}" else ""} \
+      ${if defined(min_adapter_length) then "--min-adapter-length ${min_adapter_length}" else ""} \
+      ${if defined(filter_bwa_seed_length) then "--filter-bwa-seed-length ${filter_bwa_seed_length}" else ""} \
+      ${if defined(host_min_identity) then "--host-min-identity ${host_min_identity}" else ""} \
+      ${if defined(filter_duplicates) then "--filter-duplicates ${filter_duplicates}" else ""} \
+      ${if defined(skip_pre_bwa_repartition) then "--skip-pre-bwa-repartition ${skip_pre_bwa_repartition}" else ""} \
+      ${if defined(filter_reads_per_partition) then "--filter-reads-per-partition ${filter_reads_per_partition}" else ""} \
       --verbosity ${verbosity}
 
     if [ ! -f "${paired_bam_output_path}" ]; then
@@ -471,6 +532,10 @@ task PathSeqAlign {
   File microbe_bwa_image
   File microbe_dict
 
+  Int? microbe_min_seed_length
+  Int? max_alternate_hits
+  Int? bwa_score_threshold
+
   String paired_bam_output_path = "${sample_name}.microbe_aligned.paired.bam"
   String unpaired_bam_output_path = "${sample_name}.microbe_aligned.unpaired.bam"
 
@@ -504,7 +569,10 @@ task PathSeqAlign {
       --unpaired-output ${unpaired_bam_output_path} \
       --microbe-bwa-image ${microbe_bwa_image} \
       --microbe-dict ${microbe_dict} \
-      --verbosity ${verbosity}
+      --verbosity ${verbosity} \
+      ${if defined(microbe_min_seed_length) then "--microbe-min-seed-length ${}" else "microbe_min_seed_length"} \
+      ${if defined(max_alternate_hits) then "--max-alternate-hits ${max_alternate_hits}" else ""} \
+      ${if defined(bwa_score_threshold) then "--bwa-score-threshold ${bwa_score_threshold}" else ""}
   >>>
   runtime {
     docker: gatk_docker
@@ -529,9 +597,11 @@ task PathSeqScore {
 
   File taxonomy_file
 
-  Boolean divide_by_genome_length = true
-  Float min_score_identity = 0.9
-  Float identity_margin = 0.02
+  Boolean? divide_by_genome_length
+  Float? min_score_identity
+  Float? identity_margin
+  Boolean? not_normalized_by_kingdom
+  Int? score_reads_per_partition_estimate
 
   String bam_output_path = "${sample_name}.pathseq.bam"
   String scores_output_path = "${sample_name}.pathseq.tsv"
@@ -564,9 +634,11 @@ task PathSeqScore {
       --scores-output ${scores_output_path} \
       --score-metrics ${score_metrics_output_path} \
       --taxonomy-file ${taxonomy_file} \
-      --min-score-identity ${min_score_identity} \
-      --identity-margin ${identity_margin} \
-      --divide-by-genome-length ${divide_by_genome_length}
+      ${if defined(min_score_identity) then "--min-score-identity ${min_score_identity}" else ""} \
+      ${if defined(identity_margin) then "--identity-margin ${identity_margin}" else ""} \
+      ${if defined(divide_by_genome_length) then "--divide-by-genome-length ${divide_by_genome_length}" else ""} \
+      ${if defined(not_normalized_by_kingdom) then "--not-normalized-by-kingdom ${not_normalized_by_kingdom}" else ""} \
+      ${if defined(score_reads_per_partition_estimate) then "--score-reads-per-partition-estimate ${score_reads_per_partition_estimate}" else ""}
   >>>
   runtime {
     docker: gatk_docker
@@ -612,6 +684,7 @@ task ProcessFilterMetrics {
     cut -f10 metrics.txt > frac_dup_filtered.txt
   >>>
   output {
+    File metrics_file_out = metrics_file
     Float frac_after_prealigned_filter = read_float("frac_after_prealigned_filter.txt")
     Float frac_after_qual_cpx_filter = read_float("frac_after_qual_cpx_filter.txt")
     Float frac_after_host_filter = read_float("frac_after_host_filter.txt")
