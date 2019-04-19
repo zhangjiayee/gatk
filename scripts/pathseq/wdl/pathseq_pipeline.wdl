@@ -46,6 +46,20 @@ workflow PathSeqPipeline {
   # Required if a cram
   File? input_bam_or_cram_index
 
+  # Required if the input is a cram
+  File? cram_reference_fasta
+  File? cram_reference_fasta_index
+  File? cram_reference_dict
+
+  # Set to true if host aligned. WARNING: Results in loss of EBV reads if in the aligned reference.
+  Boolean is_host_aligned
+
+  File kmer_file
+  File filter_bwa_image
+  File microbe_bwa_image
+  File microbe_dict
+  File taxonomy_file
+
   # If enabled, filter metrics will be estimated using a downsampled bam with this many reads (recommended)
   # If disabled, no filter metrics will be generated
   Boolean downsample = false
@@ -54,24 +68,12 @@ workflow PathSeqPipeline {
   # Enable to only perform host filtering
   Boolean filtering_only = false
 
-  # This can be calculated from a downsampled run to help optimize disk allocation during filtering
-  Float frac_non_host_reads = 1.0
-
-  # Required if the input is a cram
-  File? cram_reference_fasta
-  File? cram_reference_fasta_index
-  File? cram_reference_dict
-
-  File kmer_file
-  File filter_bwa_image
-  File microbe_bwa_image
-  File microbe_dict
-  File taxonomy_file
-
   # Only recommended if downsample = true
   Boolean gather_filter_metrics = false
 
-  Boolean is_host_aligned
+  # This can be calculated from a downsampled run to help optimize disk allocation during filtering
+  Float frac_non_host_reads = 1.0
+
   Boolean? filter_duplicates
   Boolean? skip_pre_bwa_repartition
   Int? filter_bam_partition_size
@@ -82,12 +84,12 @@ workflow PathSeqPipeline {
   Float? min_score_identity
   Float? identity_margin
 
-  File? gatk4_jar_override
-
   # Runtime parameters
   String gatk_docker
   String genomes_in_the_cloud_docker = "us.gcr.io/broad-gotc-prod/genomes-in-the-cloud:2.2.5-1486412288"
   String linux_docker = "ubuntu:18.10"
+
+  File? gatk4_jar_override
 
   Int? cram_to_bam_preemptible_attempts
   Int? downsample_preemptible_attempts
@@ -159,7 +161,7 @@ workflow PathSeqPipeline {
   call PathSeqFilter {
     input:
       sample_name=sample_name,
-      input_bam_or_cram=bam_file,
+      input_bam_or_cram=select_first([Downsample.output_bam_file, bam_file]),
       kmer_file=kmer_file,
       filter_bwa_image=filter_bwa_image,
       frac_non_host_reads=frac_non_host_reads,
