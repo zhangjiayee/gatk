@@ -48,8 +48,14 @@ workflow PathSeqPipeline {
 
   # If enabled, filter metrics will be estimated using a downsampled bam with this many reads (recommended)
   # If disabled, no filter metrics will be generated
-  Boolean estimate_filter_metrics_with_downsampling = true
-  Int estimate_filter_metrics_reads = 1000000
+  Boolean downsample = false
+  Int downsample_reads = 1000000
+
+  # Enable to only perform host filtering
+  Boolean filtering_only = false
+
+  # This can be calculated from a downsampled run to help optimize disk allocation during filtering
+  Float frac_non_host_reads = 1.0
 
   # Required if the input is a cram
   File? cram_reference_fasta
@@ -61,6 +67,9 @@ workflow PathSeqPipeline {
   File microbe_bwa_image
   File microbe_dict
   File taxonomy_file
+
+  # Only recommended if downsample = true
+  Boolean gather_filter_metrics = false
 
   Boolean is_host_aligned
   Boolean? filter_duplicates
@@ -133,58 +142,28 @@ workflow PathSeqPipeline {
   File bam_file = select_first([CramToBam.bam_file, input_bam_or_cram])
   File? bam_index = if defined(CramToBam.bam_index) then CramToBam.bam_index else input_bam_or_cram_index
 
-  if (estimate_filter_metrics_with_downsampling) {
-    # Downsample bam for filter metrics estimation
-    call Downsample as DownsampleFilterMetricsBam {
+  # Downsample bam for filter metrics estimation
+  if (downsample) {
+    call Downsample {
       input:
         input_bam_file=bam_file,
         input_bam_index_file=bam_index,
         downsampled_bam_filename="${sample_name}.downsampled.bam",
-        reads_after_downsampling=estimate_filter_metrics_reads,
+        reads_after_downsampling=downsample_reads,
         additional_disk_gb=downsample_additional_disk_gb,
         preemptible_tries=downsample_preemptible_attempts,
         docker=genomes_in_the_cloud_docker
     }
-
-    call PathSeqFilter as GetDownsampledFilterMetrics {
-      input:
-        sample_name=sample_name,
-        input_bam_or_cram=DownsampleFilterMetricsBam.output_bam_file,
-        kmer_file=kmer_file,
-        filter_bwa_image=filter_bwa_image,
-        gather_metrics=true,
-        is_host_aligned=is_host_aligned,
-        filter_duplicates=filter_duplicates,
-        min_clipped_read_length=min_clipped_read_length,
-        bam_partition_size=filter_bam_partition_size,
-        host_min_identity=host_min_identity,
-        filter_bwa_seed_length=filter_bwa_seed_length,
-        skip_pre_bwa_repartition=skip_pre_bwa_repartition,
-        gatk4_jar_override=gatk4_jar_override,
-        mem_gb=filter_mem_gb,
-        gatk_docker=gatk_docker,
-        preemptible_attempts=filter_preemptible_attempts,
-        additional_disk_gb=filter_additional_disk_gb,
-        cpu=filter_cpu,
-        use_ssd=filter_ssd
-    }
-
-    call ProcessFilterMetrics {
-      input:
-        metrics_file=GetDownsampledFilterMetrics.filter_metrics,
-        preemptible_tries=process_filter_metrics_preemptible_attempts,
-        docker=linux_docker
-    }
   }
 
-  call PathSeqFilter as PathSeqFilter {
+  call PathSeqFilter {
     input:
       sample_name=sample_name,
       input_bam_or_cram=bam_file,
       kmer_file=kmer_file,
       filter_bwa_image=filter_bwa_image,
-      frac_non_host_reads=select_first([ProcessFilterMetrics.frac_final_total, 1.0]),
-      gather_metrics=false,
+      frac_non_host_reads=frac_non_host_reads,
+      gather_metrics=gather_filter_metrics,
       is_host_aligned=is_host_aligned,
       filter_duplicates=filter_duplicates,
       min_clipped_read_length=min_clipped_read_length,
@@ -201,67 +180,78 @@ workflow PathSeqPipeline {
       use_ssd=filter_ssd
   }
 
-  call PathSeqAlign {
+  call ProcessFilterMetrics {
     input:
-      sample_name=sample_name,
-      input_paired_bam=PathSeqFilter.paired_bam_out,
-      input_unpaired_bam=PathSeqFilter.unpaired_bam_out,
-      microbe_bwa_image=microbe_bwa_image,
-      microbe_dict=microbe_dict,
-      gatk4_jar_override=gatk4_jar_override,
-      mem_gb=align_mem_gb,
-      gatk_docker=gatk_docker,
-      preemptible_attempts=align_preemptible_attempts,
-      additional_disk_gb=align_additional_disk_gb,
-      cpu=align_cpu,
-      use_ssd=align_ssd
-  }
-
-  call PathSeqScore {
-    input:
-      sample_name=sample_name,
-      input_paired_bam=PathSeqAlign.paired_bam_out,
-      input_unpaired_bam=PathSeqAlign.unpaired_bam_out,
-      taxonomy_file=taxonomy_file,
-      divide_by_genome_length=divide_by_genome_length,
-      min_score_identity=min_score_identity,
-      identity_margin=identity_margin,
-      gatk4_jar_override=gatk4_jar_override,
-      mem_gb=score_mem_gb,
-      gatk_docker=gatk_docker,
-      preemptible_attempts=score_preemptible_attempts,
-      additional_disk_gb=score_additional_disk_gb,
-      cpu=score_cpu,
-      use_ssd=score_ssd
-  }
-
-  call ProcessScoreMetrics {
-    input:
-      metrics_file=PathSeqScore.score_metrics,
-      preemptible_tries=process_score_metrics_preemptible_attempts,
+      metrics_file=PathSeqFilter.filter_metrics,
+      preemptible_tries=process_filter_metrics_preemptible_attempts,
       docker=linux_docker
   }
 
+  if (!filtering_only) {
+    call PathSeqAlign {
+      input:
+        sample_name=sample_name,
+        input_paired_bam=PathSeqFilter.paired_bam_out,
+        input_unpaired_bam=PathSeqFilter.unpaired_bam_out,
+        microbe_bwa_image=microbe_bwa_image,
+        microbe_dict=microbe_dict,
+        gatk4_jar_override=gatk4_jar_override,
+        mem_gb=align_mem_gb,
+        gatk_docker=gatk_docker,
+        preemptible_attempts=align_preemptible_attempts,
+        additional_disk_gb=align_additional_disk_gb,
+        cpu=align_cpu,
+        use_ssd=align_ssd
+    }
+
+    call PathSeqScore {
+      input:
+        sample_name=sample_name,
+        input_paired_bam=PathSeqAlign.paired_bam_out,
+        input_unpaired_bam=PathSeqAlign.unpaired_bam_out,
+        taxonomy_file=taxonomy_file,
+        divide_by_genome_length=divide_by_genome_length,
+        min_score_identity=min_score_identity,
+        identity_margin=identity_margin,
+        gatk4_jar_override=gatk4_jar_override,
+        mem_gb=score_mem_gb,
+        gatk_docker=gatk_docker,
+        preemptible_attempts=score_preemptible_attempts,
+        additional_disk_gb=score_additional_disk_gb,
+        cpu=score_cpu,
+        use_ssd=score_ssd
+    }
+
+    call ProcessScoreMetrics {
+      input:
+        metrics_file=PathSeqScore.score_metrics,
+        preemptible_tries=process_score_metrics_preemptible_attempts,
+        docker=linux_docker
+    }
+  }
+
   output {
-    File final_bam = PathSeqScore.bam_out
-    File scores = PathSeqScore.scores
-    File score_metrics_file = PathSeqScore.score_metrics
-    File? filter_metrics_file = GetDownsampledFilterMetrics.filter_metrics
+    File? final_bam = PathSeqScore.bam_out
+    File non_host_paired_bam = PathSeqFilter.paired_bam_out
+    File non_host_unpaired_bam = PathSeqFilter.unpaired_bam_out
 
-    Int? total_reads = DownsampleFilterMetricsBam.total_reads
-    Int non_host_mapped_reads = ProcessScoreMetrics.non_host_mapped_reads
-    Int non_host_unmapped_reads = ProcessScoreMetrics.non_host_unmapped_reads
+    File? taxonomy_scores = PathSeqScore.scores
+    File? score_metrics_file = PathSeqScore.score_metrics
+    Int? non_host_mapped_reads = ProcessScoreMetrics.non_host_mapped_reads
+    Int? non_host_unmapped_reads = ProcessScoreMetrics.non_host_unmapped_reads
 
-    Float? frac_after_prealigned_filter = ProcessFilterMetrics.frac_after_prealigned_filter
-    Float? frac_after_qual_cpx_filter = ProcessFilterMetrics.frac_after_qual_cpx_filter
-    Float? frac_after_host_filter = ProcessFilterMetrics.frac_after_host_filter
-    Float? frac_after_dedup = ProcessFilterMetrics.frac_after_dedup
-    Float? frac_non_host_paired = ProcessFilterMetrics.frac_final_paired
-    Float? frac_non_host_unpaired = ProcessFilterMetrics.frac_final_unpaired
-    Float? frac_non_host_total =ProcessFilterMetrics.frac_final_total
-    Float? frac_qual_cpx_filtered = ProcessFilterMetrics.frac_qual_cpx_filtered
-    Float? frac_host_filtered = ProcessFilterMetrics.frac_host_filtered
-    Float? frac_dup_filtered = ProcessFilterMetrics.frac_dup_filtered
+    File filter_metrics_file = PathSeqFilter.filter_metrics
+    Int? total_reads = Downsample.total_reads
+    Float frac_after_prealigned_filter = ProcessFilterMetrics.frac_after_prealigned_filter
+    Float frac_after_qual_cpx_filter = ProcessFilterMetrics.frac_after_qual_cpx_filter
+    Float frac_after_host_filter = ProcessFilterMetrics.frac_after_host_filter
+    Float frac_after_dedup = ProcessFilterMetrics.frac_after_dedup
+    Float frac_non_host_paired = ProcessFilterMetrics.frac_final_paired
+    Float frac_non_host_unpaired = ProcessFilterMetrics.frac_final_unpaired
+    Float frac_non_host_total =ProcessFilterMetrics.frac_final_total
+    Float frac_qual_cpx_filtered = ProcessFilterMetrics.frac_qual_cpx_filtered
+    Float frac_host_filtered = ProcessFilterMetrics.frac_host_filtered
+    Float frac_dup_filtered = ProcessFilterMetrics.frac_dup_filtered
   }
 }
 
