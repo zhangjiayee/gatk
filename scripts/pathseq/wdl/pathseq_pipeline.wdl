@@ -76,6 +76,7 @@ workflow PathSeqPipeline {
 
   # Filtering options
   Boolean? filter_duplicates
+  Boolean? skip_quality_filters
   Int? host_min_identity
   Int? host_kmer_threshold
   Int? filter_bwa_seed_length
@@ -188,6 +189,7 @@ workflow PathSeqPipeline {
       gather_metrics=gather_filter_metrics,
       is_host_aligned=is_host_aligned,
       filter_duplicates=filter_duplicates,
+      skip_quality_filters=skip_quality_filters,
       min_clipped_read_length=min_clipped_read_length,
       bam_partition_size=filter_bam_partition_size,
       host_min_identity=host_min_identity,
@@ -419,13 +421,13 @@ task PathSeqFilter {
   File? cram_reference_dict
 
   Boolean is_host_aligned
+  Boolean gather_metrics
   # Optimizes disk space if provided
   Float frac_non_host_reads = 1.0
 
   Boolean? skip_quality_filters
   Boolean? skip_pre_bwa_repartition
   Boolean? filter_duplicates
-  Boolean? gather_metrics
   Int? host_min_identity
   Int? filter_bwa_seed_length
   Int? min_clipped_read_length
@@ -458,7 +460,7 @@ task PathSeqFilter {
   Int cpu = 8
   Boolean use_ssd = false
 
-  Int disk_size = ceil((1.0 + frac_non_host_reads)*size(input_bam_or_cram, "GB") + size(kmer_file, "GB") + size(filter_bwa_image, "GB") + additional_disk_gb)
+  Int disk_size = ceil(((1.0 + frac_non_host_reads)*size(input_bam_or_cram, "GB")) + size(kmer_file, "GB") + size(filter_bwa_image, "GB") + additional_disk_gb)
 
   # Mem is in units of GB but our command and memory runtime values are in MB
   Int machine_mem = mem_gb * 1000
@@ -473,7 +475,8 @@ task PathSeqFilter {
       --input ${input_bam_or_cram} \
       --paired-output ${paired_bam_output_path} \
       --unpaired-output ${unpaired_bam_output_path} \
-      --is-host-aligned ${is_host_aligned} \
+      --is-host-aligned ${is_host_aligned}  \
+      --verbosity ${verbosity} \
       ${if defined(cram_reference_fasta) then "--reference ${cram_reference_fasta}" else ""} \
       ${if gather_metrics then "--filter-metrics ${filter_metrics_output_path}" else ""} \
       ${if defined(kmer_file) then "--kmer-file ${kmer_file}" else ""} \
@@ -494,8 +497,7 @@ task PathSeqFilter {
       ${if defined(host_min_identity) then "--host-min-identity ${host_min_identity}" else ""} \
       ${if defined(filter_duplicates) then "--filter-duplicates ${filter_duplicates}" else ""} \
       ${if defined(skip_pre_bwa_repartition) then "--skip-pre-bwa-repartition ${skip_pre_bwa_repartition}" else ""} \
-      ${if defined(filter_reads_per_partition) then "--filter-reads-per-partition ${filter_reads_per_partition}" else ""} \
-      --verbosity ${verbosity}
+      ${if defined(filter_reads_per_partition) then "--filter-reads-per-partition ${filter_reads_per_partition}" else ""}
 
     if [ ! -f "${paired_bam_output_path}" ]; then
     	echo "File ${paired_bam_output_path} not found, creating empty BAM"
@@ -548,11 +550,11 @@ task PathSeqAlign {
   String gatk_docker
   Int mem_gb = 140
   Int preemptible_attempts = 3
-  Float additional_disk_gb = 10
-  Int cpu = 32
+  Float additional_disk_gb = 50
+  Int cpu = 8
   Boolean use_ssd = false
 
-  Int disk_size = ceil(2.5*size(input_paired_bam, "GB") + 2.5*size(input_unpaired_bam, "GB") + size(microbe_bwa_image, "GB") + additional_disk_gb)
+  Int disk_size = ceil((2.5*size(input_paired_bam, "GB")) + (2.5*size(input_unpaired_bam, "GB")) + size(microbe_bwa_image, "GB") + additional_disk_gb)
 
   # Mem is in units of GB but our command and memory runtime values are in MB
   Int machine_mem = mem_gb * 1000
@@ -570,7 +572,7 @@ task PathSeqAlign {
       --microbe-bwa-image ${microbe_bwa_image} \
       --microbe-dict ${microbe_dict} \
       --verbosity ${verbosity} \
-      ${if defined(microbe_min_seed_length) then "--microbe-min-seed-length ${}" else "microbe_min_seed_length"} \
+      ${if defined(microbe_min_seed_length) then "--microbe-min-seed-length ${microbe_min_seed_length}" else ""} \
       ${if defined(max_alternate_hits) then "--max-alternate-hits ${max_alternate_hits}" else ""} \
       ${if defined(bwa_score_threshold) then "--bwa-score-threshold ${bwa_score_threshold}" else ""}
   >>>
