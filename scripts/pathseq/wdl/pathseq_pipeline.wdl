@@ -2,7 +2,13 @@
 ## PathSeq Pipeline WDL
 ########################################################################################################################
 ##
-## Runs the PathSeq pipeline. For increased performance, filtering metrics are estimated using a downsampled bam file.
+## Runs the PathSeq pipeline for detecting microbes in deep sequencing data.
+##
+## Important: Filtering metrics should only be generated (gather_filter_metrics=true) on a downsampled BAM.
+##
+## Important: For microbe-rich samples users should set downsampling=true and adjust downsample_reads so that the total
+##   number of microbe reads is <10M. The total number of microbe reads can be estimated from a preliminary run of this
+#    workflow with downsampling=true, filtering_only=false, and gather_filter_metrics=true.
 ##
 ## For further info see the GATK Documentation for the PathSeqPipelineSpark tool:
 ##   https://software.broadinstitute.org/gatk/documentation/tooldocs/current/org_broadinstitute_hellbender_tools_spark_pathseq_PathSeqPipelineSpark.php
@@ -10,7 +16,7 @@
 ########################################################################################################################
 ##
 ## Input requirements :
-## - Sequencing data in BAM format
+## - Sequencing data in CRAM or BAM format
 ## - Host and microbe references files available in the GATK Resource Bundle (available on FTP):
 ##     https://software.broadinstitute.org/gatk/download/bundle
 ##
@@ -20,12 +26,15 @@
 ## - - one or more read groups all belong to a single sample (SM)
 ##
 ## Output:
-## - BAM file containing microbe-mapped reads and reads of unknown sequence
-## - Tab-separated value (.tsv) file of taxonomic abundance scores
-## - Metrics for the filter and scoring phases of the pipeline:
-##   - total_reads_if_avail : total number of reads in the original bam (only available if estimate_filter_metrics_with_downsampling is true)
+## - non_host_paired_bam, non_host_unpaired_bam: BAM files containing quality-filtered non-host paired and unpaired reads
+## - If filtering_only = false:
+##   - final_bam : BAM file containing microbe-mapped reads and reads of unknown sequence
+##   - taxonomy_scores : tab-separated value (.tsv) file of taxonomic abundance scores
+##   - score_metrics_file : Picard-style metrics file for scoring stage
 ##   - non_host_mapped_reads : number of non-host reads mapped to microbe reference
 ##   - non_host_unmapped_reads : number of non-host reads that did not map to the microbe reference
+## - If gather_filter_metrics = true:
+##   - filter_metrics_file : Picard-style metrics file for filtering stage
 ##   - frac_after_prealigned_filter : estimated fraction of reads remaining after filtering prealigned host reads
 ##   - frac_after_qual_cpx_filter : estimated fraction of reads remaining after low-quality and low-complexity filtering
 ##   - frac_after_host_filter : estimated fraction of reads remaining after host read filtering
@@ -36,6 +45,8 @@
 ##   - frac_qual_cpx_filtered : estimated fraction of reads removed by low-quality/low-complexity filtering
 ##   - frac_host_filtered : estimated fraction of reads removed by host filtering
 ##   - frac_dup_filtered : estimated fraction of reads removed by deduplication
+## - If downsample = true:
+##   - total_reads_if_avail : total number of reads in the original input BAM
 ##
 ########################################################################################################################
 
@@ -54,11 +65,12 @@ workflow PathSeqPipeline {
   # Set to true if host aligned. WARNING: Results in loss of EBV reads if in the aligned reference.
   Boolean is_host_aligned
 
-  File kmer_file
-  File filter_bwa_image
-  File microbe_bwa_image
-  File microbe_dict
-  File taxonomy_file
+  File? kmer_file
+  File? filter_bwa_image
+  # Required if filtering_only=true
+  File? microbe_bwa_image
+  File? microbe_dict
+  File? taxonomy_file
 
   # If enabled, filter metrics will be estimated using a downsampled bam with this many reads (recommended)
   # If disabled, no filter metrics will be generated
@@ -229,8 +241,8 @@ workflow PathSeqPipeline {
         sample_name=sample_name,
         input_paired_bam=PathSeqFilter.paired_bam_out,
         input_unpaired_bam=PathSeqFilter.unpaired_bam_out,
-        microbe_bwa_image=microbe_bwa_image,
-        microbe_dict=microbe_dict,
+        microbe_bwa_image=select_first([microbe_bwa_image]),
+        microbe_dict=select_first([microbe_dict]),
         microbe_min_seed_length=microbe_min_seed_length,
         max_alternate_hits=max_alternate_hits,
         bwa_score_threshold=bwa_score_threshold,
@@ -248,7 +260,7 @@ workflow PathSeqPipeline {
         sample_name=sample_name,
         input_paired_bam=PathSeqAlign.paired_bam_out,
         input_unpaired_bam=PathSeqAlign.unpaired_bam_out,
-        taxonomy_file=taxonomy_file,
+        taxonomy_file=select_first([taxonomy_file]),
         divide_by_genome_length=divide_by_genome_length,
         min_score_identity=min_score_identity,
         identity_margin=identity_margin,
@@ -415,11 +427,6 @@ task PathSeqFilter {
   File? kmer_file
   File? filter_bwa_image
 
-  # Required if cram is provided
-  File? cram_reference_fasta
-  File? cram_reference_fasta_index
-  File? cram_reference_dict
-
   Boolean is_host_aligned
   Boolean gather_metrics
   # Optimizes disk space if provided
@@ -477,7 +484,6 @@ task PathSeqFilter {
       --unpaired-output ${unpaired_bam_output_path} \
       --is-host-aligned ${is_host_aligned}  \
       --verbosity ${verbosity} \
-      ${if defined(cram_reference_fasta) then "--reference ${cram_reference_fasta}" else ""} \
       ${if gather_metrics then "--filter-metrics ${filter_metrics_output_path}" else ""} \
       ${if defined(kmer_file) then "--kmer-file ${kmer_file}" else ""} \
       ${if defined(filter_bwa_image) then "--filter-bwa-image ${filter_bwa_image}" else ""} \
