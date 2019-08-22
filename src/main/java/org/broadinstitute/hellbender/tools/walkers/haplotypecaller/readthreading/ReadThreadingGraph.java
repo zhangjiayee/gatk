@@ -41,7 +41,7 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
 
     private static final int MAX_CIGAR_COMPLEXITY = 3;
     private static final long serialVersionUID = 1l;
-    private int maxMismatchesInDanglingHead = -1;
+    private int minMachingBasesToDanglngEndRecovery = 5;
 
     private boolean alreadyBuilt;
 
@@ -106,10 +106,10 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
         alreadyBuilt = true;
     }
 
-    @VisibleForTesting
-    void setMaxMismatchesInDanglingHead(final int maxMismatchesInDanglingHead) {
-        this.maxMismatchesInDanglingHead = maxMismatchesInDanglingHead;
-    }
+//    @VisibleForTesting
+//    void setMaxMismatchesInDanglingHead(final int maxMismatchesInDanglingHead) {
+//        this.maxMismatchesInDanglingHead = maxMismatchesInDanglingHead;
+//    }
 
     /**
      * Return the collection of outgoing vertices that expand this vertex with a particular base.
@@ -924,16 +924,16 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
      * @return the index of the ideal prefix match or -1 if it cannot find one, must be less than maxIndex
      */
     private int bestPrefixMatch(final byte[] path1, final byte[] path2, final int maxIndex) {
-        final int maxMismatches = getMaxMismatches(maxIndex);
-        int mismatches = 0;
+        final int minMatchingBases = getMinMatchingBases();
         int index = 0;
         int lastGoodIndex = -1;
         while ( index < maxIndex ) {
             if ( path1[index] != path2[index] ) {
-                if ( ++mismatches > maxMismatches ) {
+                if ( index > minMatchingBases ) {
+                    return index;
+                } else {
                     return -1;
                 }
-                lastGoodIndex = index;
             }
             index++;
         }
@@ -942,14 +942,10 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
     }
 
     /**
-     * Determine the maximum number of mismatches permitted on the branch.
-     * Unless it's preset (e.g. by unit tests) it should be the length of the branch divided by the kmer size.
-     *
-     * @param lengthOfDanglingBranch  the length of the branch itself
-     * @return positive integer
+     * Determine the minimum number of matches to be considered allowable for recovering dangling ends
      */
-    private int getMaxMismatches(final int lengthOfDanglingBranch) {
-        return maxMismatchesInDanglingHead > 0 ? maxMismatchesInDanglingHead : Math.max(1, (lengthOfDanglingBranch / kmerSize));
+    private int getMinMatchingBases() {
+        return minMachingBasesToDanglngEndRecovery;
     }
 
     private boolean extendDanglingPathAgainstReference(final DanglingChainMergeHelper danglingHeadMergeResult, final int numNodesToExtend) {
