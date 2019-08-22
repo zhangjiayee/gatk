@@ -41,7 +41,7 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
 
     private static final int MAX_CIGAR_COMPLEXITY = 3;
     private static final long serialVersionUID = 1l;
-    private int minMachingBasesToDanglngEndRecovery = 5;
+    private int minMachingBasesToDanglngEndRecovery = 2;
 
     private boolean alreadyBuilt;
 
