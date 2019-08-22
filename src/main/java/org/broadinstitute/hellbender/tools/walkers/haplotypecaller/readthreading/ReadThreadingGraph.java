@@ -41,7 +41,7 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
 
     private static final int MAX_CIGAR_COMPLEXITY = 3;
     private static final long serialVersionUID = 1l;
-    private int minMachingBasesToDanglngEndRecovery = 2;
+    private int minMachingBasesToDanglngEndRecovery = 0;
 
     private boolean alreadyBuilt;
 
@@ -929,7 +929,7 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
         int lastGoodIndex = -1;
         while ( index < maxIndex ) {
             if ( path1[index] != path2[index] ) {
-                if ( index > minMatchingBases ) {
+                if ( index >= minMatchingBases ) {
                     return index;
                 } else {
                     return -1;
