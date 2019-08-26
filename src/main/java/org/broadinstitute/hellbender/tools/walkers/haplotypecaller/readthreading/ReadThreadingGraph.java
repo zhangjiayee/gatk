@@ -957,11 +957,11 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
                     wasLastIndexAMismatch = true;
                     matchesSinceLastMismatch = 0;
                     readIdx += elementLength;
-                    bestReadIdx = readIdx;
+                    bestReadIdx = readIdx -1; // Compensate for the last iteration in a matching field being excessive
                     break;
                 // If there is a deletion, set the bestReadIndex to the last base before the deletion
                 case D:
-                    bestReadIdx = readIdx;
+                    bestReadIdx = readIdx - 1; // Compensate for the last iteration in a matching field being excessive
                     wasLastIndexAMismatch = true;
                     matchesSinceLastMismatch = 0;
                     refIndex += elementLength;
