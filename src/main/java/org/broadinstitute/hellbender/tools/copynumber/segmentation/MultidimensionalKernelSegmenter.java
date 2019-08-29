@@ -100,7 +100,7 @@ public final class MultidimensionalKernelSegmenter {
                         cr.getInterval(),
                         cr.getLog2CopyRatioValue(),
                         allelicCountOverlapDetector.getOverlaps(cr).stream()
-                                .min(comparator::compare)
+                                .min(comparator)
                                 .orElse(BALANCED_ALLELIC_COUNT).getAlternateAlleleFraction()))
                 .collect(Collectors.groupingBy(
                         MultidimensionalPoint::getContig,
@@ -147,8 +147,9 @@ public final class MultidimensionalKernelSegmenter {
 
         //loop over chromosomes, find changepoints, and create allele-fraction segments
         final List<MultidimensionalSegment> segments = new ArrayList<>();
-        for (final String chromosome : multidimensionalPointsPerChromosome.keySet()) {
-            final List<MultidimensionalPoint> multidimensionalPointsInChromosome = multidimensionalPointsPerChromosome.get(chromosome);
+        for (final Map.Entry<String, List<MultidimensionalPoint>> entry : multidimensionalPointsPerChromosome.entrySet()) {
+            final String chromosome = entry.getKey();
+            final List<MultidimensionalPoint> multidimensionalPointsInChromosome = entry.getValue();
             final int numMultidimensionalPointsInChromosome = multidimensionalPointsInChromosome.size();
             logger.info(String.format("Finding changepoints in %d data points in chromosome %s...",
                     numMultidimensionalPointsInChromosome, chromosome));
@@ -175,8 +176,8 @@ public final class MultidimensionalKernelSegmenter {
             }
             int previousChangepoint = -1;
             for (final int changepoint : changepoints) {
-                final int start = multidimensionalPointsPerChromosome.get(chromosome).get(previousChangepoint + 1).getStart();
-                final int end = multidimensionalPointsPerChromosome.get(chromosome).get(changepoint).getEnd();
+                final int start = entry.getValue().get(previousChangepoint + 1).getStart();
+                final int end = entry.getValue().get(changepoint).getEnd();
                 segments.add(new MultidimensionalSegment(
                         new SimpleInterval(chromosome, start, end),
                         comparator,
@@ -189,9 +190,9 @@ public final class MultidimensionalKernelSegmenter {
         return new MultidimensionalSegmentCollection(allelicCounts.getMetadata(), segments);
     }
 
-    private BiFunction<MultidimensionalPoint, MultidimensionalPoint, Double> constructKernel(final double kernelVarianceCopyRatio,
-                                                                                             final double kernelVarianceAlleleFraction,
-                                                                                             final double kernelScalingAlleleFraction) {
+    private static BiFunction<MultidimensionalPoint, MultidimensionalPoint, Double> constructKernel(final double kernelVarianceCopyRatio,
+                                                                                                    final double kernelVarianceAlleleFraction,
+                                                                                                    final double kernelScalingAlleleFraction) {
         final double standardDeviationCopyRatio = Math.sqrt(kernelVarianceCopyRatio);
         final double standardDeviationAlleleFraction = Math.sqrt(kernelVarianceAlleleFraction);
         return (p1, p2) ->
