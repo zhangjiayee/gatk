@@ -5,7 +5,7 @@ import htsjdk.samtools.Cigar;
 import htsjdk.samtools.CigarElement;
 import htsjdk.samtools.CigarOperator;
 import htsjdk.samtools.SAMFileHeader;
-import javafx.util.Pair;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.broadinstitute.gatk.nativebindings.smithwaterman.SWOverhangStrategy;
@@ -974,9 +974,9 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
             }
         }
         if (matchesSinceLastMismatch >= getMinMatchingBases) {
-            return new Pair<>(bestRefIndex, bestReadIdx);
+            return Pair.of(bestRefIndex, bestReadIdx);
         } else {
-            return new Pair<>(-1, -1);
+            return Pair.of(-1, -1);
         }
     }
 
