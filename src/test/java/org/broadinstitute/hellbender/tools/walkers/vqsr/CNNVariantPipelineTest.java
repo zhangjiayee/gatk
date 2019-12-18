@@ -69,21 +69,21 @@ public class CNNVariantPipelineTest extends GATKBaseTest {
         new Main().instanceMain(args.getArgsArray());
     }
 
-    @Test(groups = {"python"}, dependsOnMethods = {"testGenerateReadTensors"})
-    public void testTrainingReadModel() {
-        final ArgumentsBuilder args = new ArgumentsBuilder();
-        args.add("CNNVariantTrain")
-                .addArgument("input-tensor-dir", readTensorDir.toString()+"/")
-                .addArgument("tensor-type", TensorType.read_tensor.name())
-                .addArgument("epochs", "1")
-                .addArgument("training-steps", "5")
-                .addArgument("validation-steps", "2")
-                .addArgument("model-name", "test_read_tensor_model")
-                .addArgument("output-dir", readTensorDir.toString()+"/")
-                .addArgument("channels-last", "true");
-
-        new Main().instanceMain(args.getArgsArray());
-    }
+//    @Test(groups = {"python"}, dependsOnMethods = {"testGenerateReadTensors"})
+//    public void testTrainingReadModel() {
+//        final ArgumentsBuilder args = new ArgumentsBuilder();
+//        args.add("CNNVariantTrain")
+//                .addArgument("input-tensor-dir", readTensorDir.toString()+"/")
+//                .addArgument("tensor-type", TensorType.read_tensor.name())
+//                .addArgument("epochs", "1")
+//                .addArgument("training-steps", "5")
+//                .addArgument("validation-steps", "2")
+//                .addArgument("model-name", "test_read_tensor_model")
+//                .addArgument("output-dir", readTensorDir.toString()+"/")
+//                .addArgument("channels-last", "true");
+//
+//        new Main().instanceMain(args.getArgsArray());
+//    }
 
     @Test(groups = {"python"})
     public void testTranches() {
