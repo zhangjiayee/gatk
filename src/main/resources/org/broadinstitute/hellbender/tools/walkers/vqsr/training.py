@@ -14,6 +14,11 @@ import keras.backend as K
 
 
 def run():
+    K.clear_session()
+    K.get_session().close()
+    cfg = K.tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+    cfg.gpu_options.allow_growth = True
+    K.set_session(K.tf.Session(config=cfg))
     args = vqsr_cnn.parse_args()
     if 'write_reference_and_annotation_tensors' == args.mode:
         write_reference_and_annotation_tensors(args)
