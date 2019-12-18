@@ -28,6 +28,8 @@ import java.util.stream.Stream;
  */
 public abstract class GenotypingEngine<Config extends StandardCallerArgumentCollection> {
 
+    private final static int TOO_LONG_PL = 100000;
+
     protected final AlleleFrequencyCalculator alleleFrequencyCalculator;
 
     protected final Config configuration;
@@ -164,6 +166,12 @@ public abstract class GenotypingEngine<Config extends StandardCallerArgumentColl
             reducedVC = new VariantContextBuilder(vc).alleles(allelesToKeep).genotypes(reducedGenotypes).make();
         }
 
+        final long maxPLLength = GenotypeLikelihoods.numLikelihoods(reducedVC.getNAlleles(), reducedVC.getMaxPloidy(defaultPloidy)) * reducedVC.getNSamples();
+
+        if(maxPLLength >= TOO_LONG_PL)
+        {
+            logger.warn("Total length of all PL arrays for this VC is likely to reach " + maxPLLength + ", so processing may take a long time.");
+        }
 
         final AFCalculationResult AFresult = alleleFrequencyCalculator.calculate(reducedVC, defaultPloidy);
         final OutputAlleleSubset outputAlternativeAlleles = calculateOutputAlleleSubset(AFresult, vc, givenAlleles);
