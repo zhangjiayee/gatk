@@ -166,11 +166,11 @@ public abstract class GenotypingEngine<Config extends StandardCallerArgumentColl
             reducedVC = new VariantContextBuilder(vc).alleles(allelesToKeep).genotypes(reducedGenotypes).make();
         }
 
+        //Calculate the expected total length of the PL arrays for this VC to warn the user in the case that they will be exceptionally large
         final long maxPLLength = GenotypeLikelihoods.numLikelihoods(reducedVC.getNAlleles(), reducedVC.getMaxPloidy(defaultPloidy)) * reducedVC.getNSamples();
-
-        if(maxPLLength >= TOO_LONG_PL)
-        {
-            logger.warn("Total length of all PL arrays for this VC is likely to reach " + maxPLLength + ", so processing may take a long time.");
+        if(maxPLLength >= TOO_LONG_PL) {
+            logger.warn("Total length of all PL arrays for this VC(position:" + reducedVC.getStart() + ", alleles:" + reducedVC.getNAlleles()
+                    + ", ploidy:" + reducedVC.getMaxPloidy(defaultPloidy) + ") is likely to reach " + maxPLLength + ", so processing may take a long time.");
         }
 
         final AFCalculationResult AFresult = alleleFrequencyCalculator.calculate(reducedVC, defaultPloidy);
