@@ -7,6 +7,7 @@ import htsjdk.samtools.CigarOperator;
 import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.utils.Nucleotide;
+import org.broadinstitute.hellbender.utils.read.CigarUtils;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.hellbender.utils.read.ReadUtils;
 
@@ -401,104 +402,38 @@ public final class ClippingOp {
     }
 
     private CigarShift hardClipCigar(final Cigar cigar, final int start, final int stop) {
+        final boolean clipLeft = start == 0;
+        final int requestedHardClips = stop - start;
+
+        // absorb any extant hard clips into those requested
+        final int totalLeftHardClips = CigarUtils.countLeftHardClippedBases(cigar) + (clipLeft ? requestedHardClips : 0);
+        final int totalRightHardClips = CigarUtils.countRightHardClippedBases(cigar) + (clipLeft ? 0 : requestedHardClips);
+
         final Cigar newCigar = new Cigar();
-        int index = 0;
-        int totalHardClipCount = stop - start;
+        newCigar.add(new CigarElement(totalLeftHardClips, CigarOperator.HARD_CLIP));
 
-        // hard clip the beginning of the cigar string
-        if (start == 0) {
-            final Iterator<CigarElement> cigarElementIterator = cigar.getCigarElements().iterator();
-            CigarElement cigarElement = cigarElementIterator.next();
-            // Skip all leading hard clips
-            while (cigarElement.getOperator() == CigarOperator.HARD_CLIP) {
-                totalHardClipCount += cigarElement.getLength();
-                if (cigarElementIterator.hasNext()) {
-                    cigarElement = cigarElementIterator.next();
-                } else {
-                    throw new GATKException("Read is entirely hard-clipped, shouldn't be trying to clip it's cigar string");
+        int elementStart = 0;
+        for (final CigarElement element : cigar.getCigarElements()) {
+            final CigarOperator operator = element.getOperator();
+            // hard clips have been absorbed separately
+            if (operator == CigarOperator.HARD_CLIP) {
+                continue;
+            }
+            final int elementEnd = elementStart + (operator.consumesReadBases() ? element.getLength() : 0);
+
+            // element precedes start or follows end of hard clip, copy it to new cigar
+            if (elementEnd <= start || elementStart >= stop) {
+                newCigar.add(new CigarElement(element.getLength(), operator));
+            } else {    // otherwise, some or all of the element is hard-clipped
+                final int unclippedLength = clipLeft ? elementEnd - stop : start - elementStart;
+                if (unclippedLength > 0) {
+                    newCigar.add(new CigarElement(unclippedLength, operator));
                 }
             }
-            // keep clipping until we hit stop
-            while (index < stop) {
-                int shift = 0;
-                if (cigarElement.getOperator().consumesReadBases()) {
-                    shift = cigarElement.getLength();
-                }
-
-                // we're still clipping or just finished perfectly
-                if (index + shift == stop) {
-                    newCigar.add(new CigarElement(totalHardClipCount, CigarOperator.HARD_CLIP));
-
-                // element goes beyond what we need to clip
-                } else if (index + shift > stop) {
-                    final int elementLengthAfterChopping = cigarElement.getLength() - (stop - index);
-                    newCigar.add(new CigarElement(totalHardClipCount, CigarOperator.HARD_CLIP));
-                    newCigar.add(new CigarElement(elementLengthAfterChopping, cigarElement.getOperator()));
-                }
-                index += shift;
-
-                if (index < stop && cigarElementIterator.hasNext()) {
-                    cigarElement = cigarElementIterator.next();
-                } else {
-                    break;
-                }
-            }
-
-            // add the remaining cigar elements
-            while (cigarElementIterator.hasNext()) {
-                cigarElement = cigarElementIterator.next();
-                newCigar.add(new CigarElement(cigarElement.getLength(), cigarElement.getOperator()));
-            }
+            elementStart = elementEnd;
         }
 
-        // hard clip the end of the cigar string
-        else {
-            final Iterator<CigarElement> cigarElementIterator = cigar.getCigarElements().iterator();
-            CigarElement cigarElement = cigarElementIterator.next();
-
-            // Keep marching on until we find the start
-            while (index < start) {
-                int shift = 0;
-                if (cigarElement.getOperator().consumesReadBases()) {
-                    shift = cigarElement.getLength();
-                }
-
-                // we haven't gotten to the start yet, keep everything as is.
-                if (index + shift < start) {
-                    newCigar.add(new CigarElement(cigarElement.getLength(), cigarElement.getOperator()));
-                }// element goes beyond our clip starting position
-                else {
-                    final int elementLengthAfterChopping = start - index;
-
-                    // if this last element is a HARD CLIP operator, just merge it with our hard clip operator to be added later
-                    if (cigarElement.getOperator() == CigarOperator.HARD_CLIP) {
-                        totalHardClipCount += elementLengthAfterChopping;
-                    }// otherwise, maintain what's left of this last operator
-                    else {
-                        newCigar.add(new CigarElement(elementLengthAfterChopping, cigarElement.getOperator()));
-                    }
-                }
-                index += shift;
-                if (index < start && cigarElementIterator.hasNext()) {
-                    cigarElement = cigarElementIterator.next();
-                } else {
-                    break;
-                }
-            }
-
-            // check if we are hard clipping indels
-            while (cigarElementIterator.hasNext()) {
-                cigarElement = cigarElementIterator.next();
-
-                // if the read had a HardClip operator in the end, combine it with the Hard Clip we are adding
-                if (cigarElement.getOperator() == CigarOperator.HARD_CLIP) {
-                    totalHardClipCount += cigarElement.getLength();
-                }
-            }
-
-            newCigar.add(new CigarElement(totalHardClipCount, CigarOperator.HARD_CLIP));
-
-        }
+        newCigar.add(new CigarElement(totalRightHardClips, CigarOperator.HARD_CLIP));
         return cleanHardClippedCigar(newCigar);
     }
 

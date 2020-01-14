@@ -414,7 +414,7 @@ public class ReadClipper {
         if (read.isEmpty()) {
             return read;
         }
-        Utils.validate(!(clippingOp == ClippingRepresentation.SOFTCLIP_BASES) && read.isUnmapped(), () -> "Cannot soft-clip read "+read.commonToString()+" by reference coordinates because it is unmapped");
+        Utils.validate(!(clippingOp == ClippingRepresentation.SOFTCLIP_BASES && read.isUnmapped()), () -> "Cannot soft-clip read "+read.commonToString()+" by reference coordinates because it is unmapped");
 
         final int start = refStart < 0 ? 0 : ReadUtils.getReadCoordinateForReferenceCoordinate(read, refStart, ReadUtils.ClippingTail.RIGHT_TAIL);
         final int stop = refStart < 0 ? ReadUtils.getReadCoordinateForReferenceCoordinate(read, refStop, ReadUtils.ClippingTail.LEFT_TAIL) + 1 : read.getLength();
