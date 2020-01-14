@@ -68,7 +68,7 @@ public final class SimpleRepeatMaskTransformer implements ReadTransformer {
 
     private GATKRead maskRead(final GATKRead read, final int maskStart, final int maskEnd) {
         final ReadClipper readClipper = new ReadClipper(read);
-        readClipper.addOp(new ClippingOp(maskStart, maskEnd - 1));
+        readClipper.addOp(new ClippingOp(maskStart, maskEnd));
         return readClipper.clipRead(ClippingRepresentation.WRITE_NS_Q0S);
     }
 

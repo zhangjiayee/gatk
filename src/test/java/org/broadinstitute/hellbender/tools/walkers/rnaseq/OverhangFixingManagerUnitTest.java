@@ -251,7 +251,7 @@ public final class OverhangFixingManagerUnitTest extends GATKBaseTest {
         @Override
         void fixSplit(SplitRead read, Splice splice) {
             if ( read.read.getStart() == 10000) {
-                final GATKRead clippedRead = ReadClipper.softClipByReadCoordinates(read.read, 0, 2);
+                final GATKRead clippedRead = ReadClipper.softClipByReadCoordinates(read.read, 0, 3);
                 read.setRead(clippedRead);
             }
         }

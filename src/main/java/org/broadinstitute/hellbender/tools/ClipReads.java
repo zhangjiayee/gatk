@@ -215,7 +215,7 @@ public final class ClipReads extends ReadWalker {
     private final List<SeqToClip> sequencesToClip = new ArrayList<>();
 
     /**
-     * List of cycle start / stop pairs (0-based, stop is included in the cycle to remove) to clip from the reads
+     * List of cycle start / stop pairs (0-based, stop is excluded in the cycle to remove) to clip from the reads
      */
     private List<Pair<Integer, Integer>> cyclesToClip = null;
 
@@ -278,10 +278,10 @@ public final class ClipReads extends ReadWalker {
                 try {
                     String[] elts = range.split("-");
                     int start = Integer.parseInt(elts[0]) - 1;
-                    int stop = Integer.parseInt(elts[1]) - 1;
+                    int stop = Integer.parseInt(elts[1]);
 
                     if (start < 0) throw new Exception();
-                    if (stop < start) throw new Exception();
+                    if (stop <= start) throw new Exception();
 
                     logger.info(String.format("Creating cycle clipper %d-%d", start, stop));
                     cyclesToClip.add(new MutablePair<>(start, stop));
@@ -373,10 +373,8 @@ public final class ClipReads extends ReadWalker {
                     found = match.find();
                     //System.out.printf("Matching %s against %s/%s => %b%n", bases, stc.seq, stc.revSeq, found);
                     if (found) {
-                        int start = match.start();
-                        int stop = match.end() - 1;
                         //ClippingOp op = new ClippingOp(ClippingOp.ClippingType.MATCHES_CLIP_SEQ, start, stop, stc.seq);
-                        ClippingOp op = new ClippingOp(start, stop);
+                        final ClippingOp op = new ClippingOp(match.start(), match.end());
                         clipper.addOp(op);
                         data.incSeqClippedBases(stc.seq, op.getLength());
                     }
@@ -384,22 +382,6 @@ public final class ClipReads extends ReadWalker {
             }
             clipper.setData(data);
         }
-    }
-
-    /**
-     * Convenence function that takes a read and the start / stop clipping positions based on the forward
-     * strand, and returns start/stop values appropriate for the strand of the read.
-     *
-     * @param read
-     * @param start
-     * @param stop
-     * @return
-     */
-    private Pair<Integer, Integer> strandAwarePositions(GATKRead read, int start, int stop) {
-        if (read.isReverseStrand())
-            return new MutablePair<>(read.getLength() - stop - 1, read.getLength() - start - 1);
-        else
-            return new MutablePair<>(start, stop);
     }
 
     /**
@@ -413,20 +395,14 @@ public final class ClipReads extends ReadWalker {
             ClippingData data = clipper.getData();
 
             for (Pair<Integer, Integer> p : cyclesToClip) {   // iterate over each cycle range
-                int cycleStart = p.getLeft();
-                int cycleStop = p.getRight();
+                final int cycleStart = p.getLeft();
+                final int cycleStop = Math.min(p.getRight(), read.getLength()); // for convenience we tolerate clipping when the stop is beyond the end of the read
 
+                // only try to clip if the cycleStart is less than the read's length
                 if (cycleStart < read.getLength()) {
-                    // only try to clip if the cycleStart is less than the read's length
-                    if (cycleStop >= read.getLength())
-                        // we do tolerate [for convenience) clipping when the stop is beyond the end of the read
-                        cycleStop = read.getLength() - 1;
+                    int start = read.isReverseStrand() ? read.getLength() - cycleStop : cycleStart;
+                    int stop = read.isReverseStrand() ? read.getLength() - cycleStart : cycleStop;
 
-                    Pair<Integer, Integer> startStop = strandAwarePositions(read, cycleStart, cycleStop);
-                    int start = startStop.getLeft();
-                    int stop = startStop.getRight();
-
-                    //ClippingOp op = new ClippingOp(ClippingOp.ClippingType.WITHIN_CLIP_RANGE, start, stop, null);
                     ClippingOp op = new ClippingOp(start, stop);
                     clipper.addOp(op);
                     data.incNRangeClippedBases(op.getLength());
@@ -469,8 +445,8 @@ public final class ClipReads extends ReadWalker {
         }
 
         if (clipPoint != -1) {
-            int start = read.isReverseStrand() ? 0 : clipPoint;
-            int stop = read.isReverseStrand() ? clipPoint : readLen - 1;
+            final int start = read.isReverseStrand() ? 0 : clipPoint;
+            final int stop = read.isReverseStrand() ? clipPoint + 1 : readLen;
             //clipper.addOp(new ClippingOp(ClippingOp.ClippingType.LOW_Q_SCORES, start, stop, null));
             ClippingOp op = new ClippingOp(start, stop);
             clipper.addOp(op);

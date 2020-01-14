@@ -84,7 +84,7 @@ public final class BaseQualityClipReadTransformer implements ReadTransformer {
         final int clipPoint = getLeftClipPoint(quals);
         if (clipPoint != -1) {
             final ReadClipper readClipper = new ReadClipper(read);
-            readClipper.addOp(new ClippingOp(0, clipPoint));
+            readClipper.addOp(new ClippingOp(0, clipPoint + 1));
             return readClipper.clipRead(ClippingRepresentation.HARDCLIP_BASES);
         } else {
             return read;

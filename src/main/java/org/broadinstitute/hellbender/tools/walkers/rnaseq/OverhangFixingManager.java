@@ -259,14 +259,14 @@ public class OverhangFixingManager {
         if ( isLeftOverhang(readLoc, splice.loc) ) {
             final int overhang = splice.loc.getStop() - read.getStart() + 1;
             if ( overhangingBasesMismatch(read.getBases(), read.getStart() - readLoc.getStart(), readBasesLength, splice.reference, splice.reference.length - overhang, overhang) ) {
-                final GATKRead clippedRead = ReadClipper.softClipByReadCoordinates(read, 0, splice.loc.getStop() - readLoc.getStart());
+                final GATKRead clippedRead = ReadClipper.softClipByReadCoordinates(read, 0, splice.loc.getStop() - readLoc.getStart() + 1);
                 splitRead.setRead(clippedRead);
             }
         }
         else if ( isRightOverhang(readLoc, splice.loc) ) {
             final int overhang = readLoc.getStop() - splice.loc.getStart() + 1;
             if ( overhangingBasesMismatch(read.getBases(), read.getLength() - overhang, readBasesLength, splice.reference, 0, read.getEnd() - splice.loc.getStart() + 1) ) {
-                final GATKRead clippedRead = ReadClipper.softClipByReadCoordinates(read, read.getLength() - overhang, read.getLength() - 1);
+                final GATKRead clippedRead = ReadClipper.softClipByReadCoordinates(read, read.getLength() - overhang, read.getLength());
                 splitRead.setRead(clippedRead);
             }
         }
