@@ -133,11 +133,7 @@ public class ReadClipper {
             final int readLength = clippedRead.getLength();
             //check if the clipped read can still be clipped in the range requested
             if (op.start < readLength) {
-                ClippingOp fixedOperation = op;
-                if (readLength < op.stop) {
-                    fixedOperation = new ClippingOp(op.start, readLength);
-                }
-
+                final ClippingOp fixedOperation = readLength < op.stop ? new ClippingOp(op.start, readLength) : op;
                 clippedRead = fixedOperation.apply(algorithm, clippedRead);
             }
         }
@@ -433,7 +429,7 @@ public class ReadClipper {
         ops = null;
         return clippedRead;
     }
-    
+
     /**
      * Soft clip the read to the variable region (from refStart to refStop) processing also the clipped bases
      *
