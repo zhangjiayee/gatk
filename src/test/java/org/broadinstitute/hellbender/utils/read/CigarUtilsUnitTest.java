@@ -461,4 +461,23 @@ public final class CigarUtilsUnitTest {
     public void testRevertSoftClips(final String original, final String expected) {
         Assert.assertEquals(CigarUtils.revertSoftClips(TextCigarCodec.decode(original)).toString(), expected);
     }
+
+    @DataProvider(name = "soft_clip_cigar")
+    public Object[][] softClipCigar() {
+        return new Object[][] {
+                {"10M", 0, 5, "5S5M"},
+                {"10M", 5, 10, "5M5S"},
+                {"10H10M", 0, 5, "10H5S5M"},
+                {"10H10M", 5, 10, "10H5M5S"},
+                {"10M10H", 0, 5, "5S5M10H"},
+
+                {"10M10I10M", 0, 5, "5S5M10I10M"},
+                {"10M10I10M", 0, 15, "15S5I10M"}
+        };
+    }
+
+    @Test(dataProvider = "soft_clip_cigar")
+    public void testSoftClipCigar(final String original, final int start, final int stop, final String expected) {
+        Assert.assertEquals(CigarUtils.clipCigar(TextCigarCodec.decode(original), start, stop, CigarOperator.SOFT_CLIP).toString(), expected);
+    }
 }

@@ -6,7 +6,6 @@ import htsjdk.samtools.CigarElement;
 import htsjdk.samtools.CigarOperator;
 import org.broadinstitute.hellbender.utils.Nucleotide;
 import org.broadinstitute.hellbender.utils.Utils;
-import org.broadinstitute.hellbender.utils.read.CigarBuilder;
 import org.broadinstitute.hellbender.utils.read.CigarUtils;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.hellbender.utils.read.ReadUtils;
@@ -92,7 +91,7 @@ public final class ClippingOp {
 
         final Cigar oldCigar = readCopied.getCigar();
 
-        final Cigar newCigar = softClipCigar(oldCigar, start, myStop);
+        final Cigar newCigar = CigarUtils.clipCigar(oldCigar, start, myStop, CigarOperator.SOFT_CLIP);
         readCopied.setCigar(newCigar);
 
         final int newClippedStart = getNewAlignmentStartOffset(newCigar, oldCigar);
@@ -221,47 +220,6 @@ public final class ClippingOp {
     }
 
     /**
-     * Given a cigar string, soft clip up to leftClipEnd and soft clip starting at rightClipBegin
-     */
-    private Cigar softClipCigar(final Cigar cigar, final int start, final int stop) {
-        final boolean clipLeft = start == 0;
-
-        final CigarBuilder newCigar = new CigarBuilder();
-
-        int elementStart = 0;
-        for (final CigarElement element : cigar.getCigarElements()) {
-            final CigarOperator operator = element.getOperator();
-            // copy hard clips
-            if (operator == CigarOperator.HARD_CLIP) {
-                newCigar.add(new CigarElement(element.getLength(), element.getOperator()));
-                continue;
-            }
-            final int elementEnd = elementStart + (operator.consumesReadBases() ? element.getLength() : 0);
-
-            // element precedes start or follows end of soft clip, copy it to new cigar
-            if (elementEnd <= start || elementStart >= stop) {
-                newCigar.add(new CigarElement(element.getLength(), operator));
-            } else {    // otherwise, some or all of the element is soft-clipped
-                final int unclippedLength = clipLeft ? elementEnd - stop : start - elementStart;
-                final int clippedLength = element.getLength() - unclippedLength;
-
-                if (unclippedLength == 0) {
-                    newCigar.add(new CigarElement(clippedLength, CigarOperator.SOFT_CLIP));
-                } else if (clipLeft) {
-                    newCigar.add(new CigarElement(clippedLength, CigarOperator.SOFT_CLIP));
-                    newCigar.add(new CigarElement(unclippedLength, operator));
-                } else {
-                    newCigar.add(new CigarElement(unclippedLength, operator));
-                    newCigar.add(new CigarElement(clippedLength, CigarOperator.SOFT_CLIP));
-                }
-            }
-            elementStart = elementEnd;
-        }
-
-        return newCigar.make();
-    }
-
-    /**
      * Hard clip bases from read, from start to stop in base coordinates
      * <p>
      * If start == 0, then we will clip from the front of the read, otherwise we clip
@@ -286,7 +244,7 @@ public final class ClippingOp {
         // If the read is unmapped there is no Cigar string and neither should we create a new cigar string
 
         final Cigar cigar = read.getCigar();//Get the cigar once to avoid multiple calls because each makes a copy of the cigar
-        final Cigar newCigar = read.isUnmapped() ? new Cigar() : hardClipCigar(cigar, start, stop);
+        final Cigar newCigar = read.isUnmapped() ? new Cigar() : CigarUtils.clipCigar(cigar, start, stop, CigarOperator.HARD_CLIP);
 
         final int newLength = read.getLength() - (stop - start);
 
@@ -324,43 +282,6 @@ public final class ClippingOp {
 
         return hardClippedRead;
 
-    }
-
-    private Cigar hardClipCigar(final Cigar cigar, final int start, final int stop) {
-        final boolean clipLeft = start == 0;
-        final int requestedHardClips = stop - start;
-
-        // absorb any extant hard clips into those requested
-        final int totalLeftHardClips = CigarUtils.countLeftHardClippedBases(cigar) + (clipLeft ? requestedHardClips : 0);
-        final int totalRightHardClips = CigarUtils.countRightHardClippedBases(cigar) + (clipLeft ? 0 : requestedHardClips);
-
-        final Cigar newCigar = new Cigar();
-        newCigar.add(new CigarElement(totalLeftHardClips, CigarOperator.HARD_CLIP));
-
-        int elementStart = 0;
-        for (final CigarElement element : cigar.getCigarElements()) {
-            final CigarOperator operator = element.getOperator();
-            // hard clips have been absorbed separately
-            if (operator == CigarOperator.HARD_CLIP) {
-                continue;
-            }
-            final int elementEnd = elementStart + (operator.consumesReadBases() ? element.getLength() : 0);
-
-            // element precedes start or follows end of hard clip, copy it to new cigar
-            if (elementEnd <= start || elementStart >= stop) {
-                newCigar.add(new CigarElement(element.getLength(), operator));
-            } else {    // otherwise, some or all of the element is hard-clipped
-                final int unclippedLength = clipLeft ? elementEnd - stop : start - elementStart;
-                if (unclippedLength > 0) {
-                    newCigar.add(new CigarElement(unclippedLength, operator));
-                }
-            }
-            elementStart = elementEnd;
-        }
-
-        newCigar.add(new CigarElement(totalRightHardClips, CigarOperator.HARD_CLIP));
-        return null;// clean cigar so that read (aside from hard clips) does not start or end with deletions or gaps (N) ie elements
-        // that do not consume read bases
     }
 
     /**
