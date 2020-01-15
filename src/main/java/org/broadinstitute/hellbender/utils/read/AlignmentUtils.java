@@ -98,7 +98,7 @@ public final class AlignmentUtils {
         // SW of read -> hap mapped through the given by hap -> ref
         final Cigar haplotypeToRef = trimCigarByBases(extendedHaplotypeCigar, swPairwiseAlignment.getAlignmentOffset(), extendedHaplotypeCigar.getReadLength() - 1);
         final Cigar readToRefCigarRaw = applyCigarToCigar(swCigar, haplotypeToRef);
-        final Cigar readToRefCigarClean = cleanUpCigar(readToRefCigarRaw);
+        final Cigar readToRefCigarClean = consolidateCigar(readToRefCigarRaw);
         final Cigar readToRefCigar = leftAlignIndel(readToRefCigarClean, refHaplotype.getBases(),
                 originalRead.getBases(), readStartOnHaplotype, 0, true);
 
@@ -715,10 +715,14 @@ public final class AlignmentUtils {
     public static Cigar consolidateCigar( final Cigar cigar ) {
         Utils.nonNull(cigar);
 
+        if (cigar.numCigarElements() == 1) {
+            return cigar;
+        }
+
         boolean needsConsolidation = false;
         CigarOperator lastOp = null;
         for( final CigarElement cur : cigar.getCigarElements() ) {
-            if ( cur.getLength() == 0 || lastOp == cur.getOperator() ) {
+            if ( cur.getLength() == 0 || lastOp == cur.getOperator() || lastOp.isClipping() && !cur.getOperator().consumesReadBases() ) {
                 needsConsolidation = true;
                 break;
             }
@@ -728,7 +732,7 @@ public final class AlignmentUtils {
         if (!needsConsolidation) {
             return cigar;
         }
-        
+
         final CigarBuilder builder = new CigarBuilder();
         for( final CigarElement cur : cigar.getCigarElements() ) {
             if (cur.getLength() > 0) {
@@ -865,7 +869,7 @@ public final class AlignmentUtils {
                 cigar = newCigar;
                 i = -1;
                 if (reachedEndOfRead)
-                    cigar = cleanupCigar ? cleanUpCigar(cigar) : cigar;
+                    cigar = cleanupCigar ? consolidateCigar(cigar) : cigar;
             }
 
             if (reachedEndOfRead)
@@ -911,27 +915,6 @@ public final class AlignmentUtils {
                 return true;
         }
         return false;
-    }
-
-    /**
-     * Clean up the incoming cigar
-     *
-     * Removes elements with zero size
-     * Clips away beginning deletion operators
-     *
-     * @param c the cigar string we want to clean up
-     * @return a newly allocated, cleaned up Cigar
-     */
-    public static Cigar cleanUpCigar(final Cigar c) {
-        final List<CigarElement> elements = new ArrayList<>(c.numCigarElements() - 1);
-
-        for (final CigarElement ce : c.getCigarElements()) {
-            if (ce.getLength() != 0 && (! elements.isEmpty() || ce.getOperator() != CigarOperator.D)) {
-                elements.add(ce);
-            }
-        }
-
-        return new Cigar(elements);
     }
 
     /**
