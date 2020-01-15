@@ -363,7 +363,7 @@ public final class ClippingOp {
         }
 
         newCigar.add(new CigarElement(totalRightHardClips, CigarOperator.HARD_CLIP));
-        return // clean cigar so that read (aside from hard clips) does not start or end with deletions or gaps (N) ie elements
+        return null;// clean cigar so that read (aside from hard clips) does not start or end with deletions or gaps (N) ie elements
         // that do not consume read bases
     }
 
