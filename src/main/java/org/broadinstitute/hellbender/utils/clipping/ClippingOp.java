@@ -137,7 +137,7 @@ public final class ClippingOp {
         }
 
         unclipped.setCigar(unclippedCigar);
-        final int newStart = read.getStart() + calculateAlignmentStartShift(read.getCigar(), unclippedCigar);
+        final int newStart = read.getStart() + CigarUtils.countLeftClippedBases(unclippedCigar) - CigarUtils.countLeftClippedBases(read.getCigar());
 
         if (newStart <= 0) {
             // if the start of the unclipped read occurs before the contig,
@@ -290,11 +290,9 @@ public final class ClippingOp {
         // If the read is unmapped there is no Cigar string and neither should we create a new cigar string
 
         final Cigar cigar = read.getCigar();//Get the cigar once to avoid multiple calls because each makes a copy of the cigar
-        final CigarShift cigarShift = read.isUnmapped() ? new CigarShift(new Cigar(), 0, 0) : hardClipCigar(cigar, start, stop);
+        final Cigar newCigar = read.isUnmapped() ? new Cigar() : hardClipCigar(cigar, start, stop);
 
-        // the cigar may force a shift left or right (or both) in case we are left with insertions
-        // starting or ending the read after applying the hard clip on start/stop.
-        final int newLength = read.getLength() - (stop - start) - cigarShift.shiftFromStart - cigarShift.shiftFromEnd;
+        final int newLength = read.getLength() - (stop - start);
 
         // If the new read is going to be empty, return an empty read now. This avoids initializing the new
         // read with invalid values below in certain cases (such as a negative alignment start).
@@ -305,7 +303,7 @@ public final class ClippingOp {
 
         final byte[] newBases = new byte[newLength];
         final byte[] newQuals = new byte[newLength];
-        final int copyStart = (start == 0) ? stop + cigarShift.shiftFromStart : cigarShift.shiftFromStart;
+        final int copyStart = (start == 0) ? stop : 0;
 
         System.arraycopy(read.getBases(), copyStart, newBases, 0, newLength);
         System.arraycopy(read.getBaseQualities(), copyStart, newQuals, 0, newLength);
@@ -314,7 +312,7 @@ public final class ClippingOp {
 
         hardClippedRead.setBaseQualities(newQuals);
         hardClippedRead.setBases(newBases);
-        hardClippedRead.setCigar(cigarShift.cigar);
+        hardClippedRead.setCigar(newCigar);
         if (start == 0 && !read.isUnmapped()) {
             hardClippedRead.setPosition(read.getContig(), read.getStart() + calculateAlignmentStartShift(cigar, stop - start));
         }
@@ -332,7 +330,7 @@ public final class ClippingOp {
 
     }
 
-    private CigarShift hardClipCigar(final Cigar cigar, final int start, final int stop) {
+    private Cigar hardClipCigar(final Cigar cigar, final int start, final int stop) {
         final boolean clipLeft = start == 0;
         final int requestedHardClips = stop - start;
 
@@ -365,123 +363,8 @@ public final class ClippingOp {
         }
 
         newCigar.add(new CigarElement(totalRightHardClips, CigarOperator.HARD_CLIP));
-        return cleanHardClippedCigar(newCigar);
-    }
-
-    private enum Passes {
-        FIRST,
-        SECOND
-    }
-
-    /**
-     * Checks if a hard clipped cigar left a read starting or ending with deletions or gap (N)
-     * and cleans it up accordingly.
-     *
-     * @param cigar the original cigar
-     * @return an object with the shifts (see CigarShift class)
-     */
-    private CigarShift cleanHardClippedCigar(final Cigar cigar) {
-
-        final Cigar cleanCigar = new Cigar();
-        int shiftFromStart = 0;
-        int shiftFromEnd = 0;
-        Stack<CigarElement> cigarStack = new Stack<>();
-        final Stack<CigarElement> inverseCigarStack = new Stack<>();
-
-        for (final CigarElement cigarElement : cigar.getCigarElements()) {
-            cigarStack.push(cigarElement);
-        }
-
-        for (final Passes pass: Passes.values()) {
-            final int shift = 0;
-            int totalHardClip = 0;
-            boolean readHasStarted = false;
-            boolean addedHardClips = false;
-
-            while (!cigarStack.empty()) {
-                final CigarElement cigarElement = cigarStack.pop();
-
-                if (!readHasStarted && cigarElement.getOperator() == CigarOperator.HARD_CLIP) {
-                    totalHardClip += cigarElement.getLength();
-                }
-
-                // Deletions (D) and gaps (N) are not hardclips (H) and do not consume read bases....
-                // so they gets dropped from the edges of the read since readHasStarted is still false.
-
-                readHasStarted |= cigarElement.getOperator().consumesReadBases();
-
-                if (readHasStarted) {
-                    switch (pass) {
-                        case FIRST:
-                            if (!addedHardClips && totalHardClip > 0) {
-                                inverseCigarStack.push(new CigarElement(totalHardClip, CigarOperator.HARD_CLIP));
-                            }
-                            inverseCigarStack.push(cigarElement);
-                            break;
-                        case SECOND:
-                            if (!addedHardClips && totalHardClip > 0) {
-                                cleanCigar.add(new CigarElement(totalHardClip, CigarOperator.HARD_CLIP));
-                            }
-                            cleanCigar.add(cigarElement);
-                            break;
-                    }
-                    addedHardClips = true;
-                }
-            }
-            switch (pass) {
-                // first pass is from end to start of the cigar elements
-                case FIRST:
-                    shiftFromEnd = shift;
-                    cigarStack = inverseCigarStack;
-                    break;
-                case SECOND:
-                    // second pass is from start to end with the end already cleaned
-                    shiftFromStart = shift;
-                    break;
-            }
-        }
-
-        return new CigarShift(cleanCigar, shiftFromStart, shiftFromEnd);
-    }
-
-    /**
-     * Compute the offset of the first "real" position in the cigar on the genome
-     * <p>
-     * This is defined as a first position after a run of Hs followed by a run of Ss
-     *
-     * @param cigar A non-null cigar
-     * @return the offset (from 0) of the first on-genome base
-     */
-    private int calcHardSoftOffset(final Cigar cigar) {
-        final List<CigarElement> elements = cigar.getCigarElements();
-
-        int size = 0;
-        int i = 0;
-        while (i < elements.size() && elements.get(i).getOperator() == CigarOperator.HARD_CLIP) {
-            size += elements.get(i).getLength();
-            i++;
-        }
-        while (i < elements.size() && elements.get(i).getOperator() == CigarOperator.SOFT_CLIP) {
-            size += elements.get(i).getLength();
-            i++;
-        }
-
-        return size;
-    }
-
-    /**
-     * Calculates shift of alignment in the newCigar relative to the oldCigar due to
-     * hard/soft clipping under assumption that the original clipped bases did not contain
-     * insertions/deletions. This is a naive code that does not work for many CIGAR strings.
-     *
-     * @param oldCigar original cigar
-     * @param newCigar new cigar (with hard/soft clipping)
-     * @return int the offset (from 0 between the alignment start on the old and on the new cigar)
-     */
-    private int calculateAlignmentStartShift(final Cigar oldCigar, final Cigar newCigar) {
-        final int newShift = calcHardSoftOffset(newCigar);
-        final int oldShift = calcHardSoftOffset(oldCigar);
-        return newShift - oldShift;
+        return // clean cigar so that read (aside from hard clips) does not start or end with deletions or gaps (N) ie elements
+        // that do not consume read bases
     }
 
     /**
@@ -540,17 +423,5 @@ public final class ClippingOp {
         }
 
         return refBasesClipped;
-    }
-
-    private static final class CigarShift {
-        private final Cigar cigar;
-        private final int shiftFromStart;
-        private final int shiftFromEnd;
-
-        private CigarShift(final Cigar cigar, final int shiftFromStart, final int shiftFromEnd) {
-            this.cigar = cigar;
-            this.shiftFromStart = shiftFromStart;
-            this.shiftFromEnd = shiftFromEnd;
-        }
     }
 }
