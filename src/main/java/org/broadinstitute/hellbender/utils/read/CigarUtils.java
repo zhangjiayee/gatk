@@ -12,6 +12,7 @@ import org.broadinstitute.hellbender.utils.smithwaterman.SmithWatermanAlignment;
 
 import java.util.*;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public final class CigarUtils {
@@ -71,23 +72,16 @@ public final class CigarUtils {
     /**
      * Removes all clipping operators from the cigar.
      */
-    public static Cigar trimReadToUnclippedBases(final Cigar cigar) {
-        Utils.nonNull(cigar, "cigar is null");
-        final List<CigarElement> elements = new ArrayList<>(cigar.numCigarElements());
-        for ( final CigarElement ce : cigar.getCigarElements() ) {
-            if ( !isClipOperator(ce.getOperator()) ) {
-                elements.add(ce);
-            }
-        }
+    public static Cigar removeClipsAndPadding(final Cigar cigar) {
+        final List<CigarElement> elements = Utils.nonNull(cigar).getCigarElements().stream()
+                .filter(el -> isClipOperator(el)).collect(Collectors.toList());
+
         return new Cigar(elements);
     }
 
-    private static boolean isClipOperator(final CigarOperator op) {
-        return op == CigarOperator.S || op == CigarOperator.H || op == CigarOperator.P;
-    }
-
     private static boolean isClipOperator(final CigarElement el) {
-        return isClipOperator(el.getOperator());
+        final CigarOperator op = el.getOperator();
+        return op == CigarOperator.S || op == CigarOperator.H || op == CigarOperator.P;
     }
 
     /**
