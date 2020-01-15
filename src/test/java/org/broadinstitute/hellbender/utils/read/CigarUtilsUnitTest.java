@@ -107,7 +107,7 @@ public final class CigarUtilsUnitTest {
     @Test(dataProvider = "testData_containsNOperator")
     public void testContainsNOperator(final String cigarStrIn, final boolean expected){
         final Cigar cigarIn = TextCigarCodec.decode(cigarStrIn);
-        final boolean actual = CigarUtils.containsNOperator(cigarIn);
+        final boolean actual = CigarUtils.containsNOperator(cigarIn.getCigarElements());
         Assert.assertEquals(actual, expected, cigarStrIn);
     }
 

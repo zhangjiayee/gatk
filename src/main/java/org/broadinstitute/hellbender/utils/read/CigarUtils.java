@@ -128,21 +128,6 @@ public final class CigarUtils {
     }
 
     /**
-     * Returns whether the cigar has any N operators.
-     */
-    public static boolean containsNOperator(final Cigar cigar) {
-        Utils.nonNull(cigar);
-        //Note: reach the elements directly rather that calling getCigarElements because
-        // we want to avoid allocating a new unmodifiable list view (comes up in profiling of HaplotypeCaller)
-        for (int i = 0, n = cigar.numCigarElements(); i < n; i++) {
-            if (cigar.getCigarElement(i).getOperator() == CigarOperator.N){
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
      * Returns whether the list has any N operators.
      */
     public static boolean containsNOperator(final List<CigarElement> cigarElements) {
