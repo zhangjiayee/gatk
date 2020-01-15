@@ -709,58 +709,34 @@ public final class AlignmentUtils {
      *
      * Note that this routine collapses cigar elements of size 0, so 2M0M => 2M
      *
-     * @param c the cigar to consolidate
+     * @param cigar the cigar to consolidate
      * @return  a non-null cigar with consecutive matching operators merged into single operators.
      */
-    public static Cigar consolidateCigar( final Cigar c ) {
-        if ( c == null ) { throw new IllegalArgumentException("Cigar cannot be null"); }
+    public static Cigar consolidateCigar( final Cigar cigar ) {
+        Utils.nonNull(cigar);
 
-        // fast check to determine if there's anything worth doing before we create new Cigar and actually do some work
-        if ( ! needsConsolidation(c) )
-            return c;
-
-        final Cigar returnCigar = new Cigar();
-        int sumLength = 0;
-        CigarElement lastElement = null;
-
-        for( final CigarElement cur : c.getCigarElements() ) {
-            if ( cur.getLength() == 0 )
-                continue; // don't add elements of 0 length
-
-            if ( lastElement != null && lastElement.getOperator() != cur.getOperator() ) {
-                returnCigar.add(new CigarElement(sumLength, lastElement.getOperator()));
-                sumLength = 0;
-            }
-
-            sumLength += cur.getLength();
-            lastElement = cur;
-        }
-
-        if ( sumLength > 0 ) {
-            returnCigar.add(new CigarElement(sumLength, lastElement.getOperator()));
-        }
-
-        return returnCigar;
-    }
-
-    /**
-     * Does the cigar C need to be consolidated?
-     *
-     * @param c a non-null cigar
-     * @return true if so
-     */
-    private static boolean needsConsolidation(final Cigar c) {
-        if ( c.numCigarElements() <= 1 )
-            return false; // fast path for empty or single cigar
-
+        boolean needsConsolidation = false;
         CigarOperator lastOp = null;
-        for( final CigarElement cur : c.getCigarElements() ) {
-            if ( cur.getLength() == 0 || lastOp == cur.getOperator() )
-                return true;
+        for( final CigarElement cur : cigar.getCigarElements() ) {
+            if ( cur.getLength() == 0 || lastOp == cur.getOperator() ) {
+                needsConsolidation = true;
+                break;
+            }
             lastOp = cur.getOperator();
         }
 
-        return false;
+        if (!needsConsolidation) {
+            return cigar;
+        }
+        
+        final CigarBuilder builder = new CigarBuilder();
+        for( final CigarElement cur : cigar.getCigarElements() ) {
+            if (cur.getLength() > 0) {
+                builder.add(cur);
+            }
+        }
+
+        return builder.make();
     }
 
     /**
