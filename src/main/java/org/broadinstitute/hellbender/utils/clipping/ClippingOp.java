@@ -117,28 +117,23 @@ public final class ClippingOp {
         Arrays.fill(arr, start, Math.min(arr.length, stop), newVal);
     }
 
+    /**
+     * Convert all soft clip (S) operators into match (M) operators and merge any S that becomes M with any adjacent M
+     */
     private GATKRead applyRevertSoftClippedBases(final GATKRead read) {
+        final Cigar originalCigar = read.getCigar();
+        final List<CigarElement> originalElements = originalCigar.getCigarElements();
+
+        if (originalElements.isEmpty() || !(originalElements.get(0).getOperator().isClipping() || originalElements.get(originalElements.size() - 1).getOperator().isClipping())) {
+            return read;
+        }
+
         GATKRead unclipped = read.copy();
 
-        final Cigar unclippedCigar = new Cigar();
-        int matchesCount = 0;
-        for (final CigarElement element : read.getCigarElements()) {
-            if (element.getOperator() == CigarOperator.SOFT_CLIP || element.getOperator() == CigarOperator.MATCH_OR_MISMATCH) {
-                matchesCount += element.getLength();
-            } else if (matchesCount > 0) {
-                unclippedCigar.add(new CigarElement(matchesCount, CigarOperator.MATCH_OR_MISMATCH));
-                matchesCount = 0;
-                unclippedCigar.add(element);
-            } else {
-                unclippedCigar.add(element);
-            }
-        }
-        if (matchesCount > 0) {
-            unclippedCigar.add(new CigarElement(matchesCount, CigarOperator.MATCH_OR_MISMATCH));
-        }
+        final Cigar unclippedCigar = CigarUtils.revertSoftClips(originalCigar);
 
         unclipped.setCigar(unclippedCigar);
-        final int newStart = read.getStart() + CigarUtils.countLeftClippedBases(unclippedCigar) - CigarUtils.countLeftClippedBases(read.getCigar());
+        final int newStart = read.getStart() + CigarUtils.countLeftClippedBases(unclippedCigar) - CigarUtils.countLeftClippedBases(originalCigar);
 
         if (newStart <= 0) {
             // if the start of the unclipped read occurs before the contig,

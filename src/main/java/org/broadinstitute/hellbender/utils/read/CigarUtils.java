@@ -399,4 +399,17 @@ public final class CigarUtils {
                 .mapToInt(CigarElement::getLength)
                 .sum();
     }
+
+    public static Cigar revertSoftClips(final Cigar originalCigar) {
+        final CigarBuilder builder = new CigarBuilder();
+        for (final CigarElement element : originalCigar.getCigarElements()) {
+            if (element.getOperator() == CigarOperator.SOFT_CLIP) {
+                builder.add(new CigarElement(element.getLength(), CigarOperator.MATCH_OR_MISMATCH));
+            } else {
+                builder.add(element);
+            }
+        }
+
+        return builder.make();
+    }
 }
