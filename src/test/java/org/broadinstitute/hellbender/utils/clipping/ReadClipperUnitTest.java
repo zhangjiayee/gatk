@@ -1,14 +1,8 @@
 package org.broadinstitute.hellbender.utils.clipping;
 
-import htsjdk.samtools.Cigar;
-import htsjdk.samtools.CigarElement;
-import htsjdk.samtools.CigarOperator;
-import htsjdk.samtools.SAMFileHeader;
-import htsjdk.samtools.TextCigarCodec;
+import htsjdk.samtools.*;
 import org.broadinstitute.hellbender.GATKBaseTest;
 import org.broadinstitute.hellbender.testutils.ReadClipperTestUtils;
-import org.broadinstitute.hellbender.utils.BaseUtils;
-import org.broadinstitute.hellbender.utils.read.AlignmentUtils;
 import org.broadinstitute.hellbender.utils.read.ArtificialReadUtils;
 import org.broadinstitute.hellbender.utils.read.CigarUtils;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
@@ -17,11 +11,7 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import static org.broadinstitute.hellbender.utils.read.ReadUtils.getSoftEnd;
 import static org.broadinstitute.hellbender.utils.read.ReadUtils.getSoftStart;
@@ -271,7 +261,8 @@ public final class ReadClipperUnitTest extends GATKBaseTest {
      * @param clipped clipped read
      */
     private void assertUnclippedLimits(final GATKRead original, final GATKRead clipped) {
-        if (CigarUtils.hasNonClippedBases(clipped.getCigar())) {
+        final boolean hasNonClips = clipped.getCigar().getCigarElements().stream().anyMatch(el -> !el.getOperator().isClipping());
+        if (hasNonClips) {
             Assert.assertEquals(original.getUnclippedStart(), clipped.getUnclippedStart());
             Assert.assertEquals(original.getUnclippedEnd(), clipped.getUnclippedEnd());
         }
