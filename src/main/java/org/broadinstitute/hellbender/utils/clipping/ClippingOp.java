@@ -6,6 +6,7 @@ import htsjdk.samtools.CigarElement;
 import htsjdk.samtools.CigarOperator;
 import org.broadinstitute.hellbender.utils.Nucleotide;
 import org.broadinstitute.hellbender.utils.Utils;
+import org.broadinstitute.hellbender.utils.read.CigarBuilder;
 import org.broadinstitute.hellbender.utils.read.CigarUtils;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.hellbender.utils.read.ReadUtils;
@@ -230,7 +231,7 @@ public final class ClippingOp {
     private Cigar softClipCigar(final Cigar cigar, final int start, final int stop) {
         final boolean clipLeft = start == 0;
 
-        final Cigar newCigar = new Cigar();
+        final CigarBuilder newCigar = new CigarBuilder();
 
         int elementStart = 0;
         for (final CigarElement element : cigar.getCigarElements()) {
@@ -262,7 +263,7 @@ public final class ClippingOp {
             elementStart = elementEnd;
         }
 
-        return CigarUtils.combineAdjacentCigarElements(newCigar);
+        return newCigar.make();
     }
 
     /**

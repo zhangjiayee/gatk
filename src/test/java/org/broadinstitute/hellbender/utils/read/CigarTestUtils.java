@@ -28,7 +28,7 @@ public final class CigarTestUtils {
     }
 
     /**
-     * Returns a list of randomly generted valid CIGAR instances.
+     * Returns a list of randomly generated valid CIGAR instances.
      * @param rdn random number generator to use to generate random elements in the result cigars.
      * @param count number of random cigars to produce.
      * @param maximumNumberOfCoreElements maximum number of core (anything except clipping) operations in any given cigar.
@@ -70,14 +70,15 @@ public final class CigarTestUtils {
             if (!coreElements.get(coreElements.size() - 1).getOperator().isAlignment()) {
                 coreElements.add(new CigarElement(rdn.nextInt(maximumElementLength) + 1, CigarOperator.M));
             }
-            final List<CigarElement> elements = new ArrayList<>();
-            if (leftHardClippingLength > 0) elements.add(new CigarElement(leftHardClippingLength, CigarOperator.H));
-            if (leftSoftClippingLength > 0) elements.add(new CigarElement(leftSoftClippingLength, CigarOperator.S));
-            elements.addAll(coreElements);
-            if (rightSoftClippingLength > 0) elements.add(new CigarElement(rightSoftClippingLength, CigarOperator.S));
-            if (rightHardClippingLength > 0) elements.add(new CigarElement(rightHardClippingLength, CigarOperator.H));
-            final Cigar cigar = CigarUtils.combineAdjacentCigarElements(new Cigar(elements));
-            result.add(cigar);
+            final CigarBuilder builder = new CigarBuilder();
+            if (leftHardClippingLength > 0) builder.add(new CigarElement(leftHardClippingLength, CigarOperator.H));
+            if (leftSoftClippingLength > 0) builder.add(new CigarElement(leftSoftClippingLength, CigarOperator.S));
+            for (final CigarElement elem : coreElements) {
+                builder.add(elem);
+            }
+            if (rightSoftClippingLength > 0) builder.add(new CigarElement(rightSoftClippingLength, CigarOperator.S));
+            if (rightHardClippingLength > 0) builder.add(new CigarElement(rightHardClippingLength, CigarOperator.H));
+            result.add(builder.make());
         }
         return result;
     }

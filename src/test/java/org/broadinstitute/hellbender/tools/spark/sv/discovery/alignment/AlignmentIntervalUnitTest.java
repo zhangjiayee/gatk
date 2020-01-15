@@ -318,26 +318,20 @@ public class AlignmentIntervalUnitTest extends GATKBaseTest {
     }
 
     @Test(dataProvider = "randomValidCigars", groups = "sv")
-    public void testSoftClip(final Cigar cigar) {
-        final Cigar actual = AlignmentInterval.softOrHardReclip(cigar, CigarOperator.S);
-        final Cigar expected = CigarUtils.combineAdjacentCigarElements(new Cigar(
-                cigar.getCigarElements().stream()
-                        .map(ce -> ce.getOperator().isClipping() ? new CigarElement(ce.getLength(), CigarOperator.SOFT_CLIP) : ce)
-                        .collect(Collectors.toList())
-        ));
-
-        Assert.assertEquals(actual, expected);
-    }
-
-    @Test(dataProvider = "randomValidCigars", groups = "sv")
-    public void testHardClip(final Cigar cigar) {
-        final Cigar actual = AlignmentInterval.softOrHardReclip(cigar, CigarOperator.H);
-        final Cigar expected = CigarUtils.combineAdjacentCigarElements(new Cigar(
-                cigar.getCigarElements().stream()
-                        .map(ce -> ce.getOperator().isClipping() ? new CigarElement(ce.getLength(), CigarOperator.HARD_CLIP) : ce)
-                        .collect(Collectors.toList())
-        ));
-        Assert.assertEquals(actual, expected);
+    public void testSoftOrHardReclip(final Cigar cigar) {
+        for (final CigarOperator clipType : Arrays.asList(CigarOperator.H, CigarOperator.S)) {
+            final Cigar actual = AlignmentInterval.softOrHardReclip(cigar, clipType);
+            final CigarBuilder expected = new CigarBuilder();
+            final List<CigarElement> expectedElements = cigar.getCigarElements().stream()
+                    .map(ce -> ce.getOperator().isClipping() ? new CigarElement(ce.getLength(), clipType) : ce)
+                    .collect(Collectors.toList());
+            if (expectedElements.stream().anyMatch(e -> !e.getOperator().isClipping())) {
+                for (final CigarElement elem : expectedElements) {
+                    expected.add(elem);
+                }
+                Assert.assertEquals(actual, expected.make());
+            }
+        }
     }
 
     @DataProvider(name = "randomValidCigars")
