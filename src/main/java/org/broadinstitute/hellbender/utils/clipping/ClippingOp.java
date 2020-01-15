@@ -4,18 +4,13 @@ import com.google.common.annotations.VisibleForTesting;
 import htsjdk.samtools.Cigar;
 import htsjdk.samtools.CigarElement;
 import htsjdk.samtools.CigarOperator;
-import org.broadinstitute.hellbender.exceptions.GATKException;
-import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.utils.Nucleotide;
+import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.read.CigarUtils;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.hellbender.utils.read.ReadUtils;
 
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Stack;
-import java.util.Vector;
+import java.util.*;
 
 /**
  * Represents a clip on a read.  It has a type (see the enum) along with a start and stop in the bases
@@ -88,32 +83,15 @@ public final class ClippingOp {
     }
 
     private GATKRead applySoftClipBases(final GATKRead readCopied) {
-        if (readCopied.isUnmapped()) {
-            // we can't process unmapped reads
-            throw new UserException("Read Clipper cannot soft clip unmapped reads");
-        }
+        Utils.validateArg(!readCopied.isUnmapped(), "Read Clipper cannot soft clip unmapped reads");
 
-        int myStop = stop;
-        if ((stop - start) == readCopied.getLength()) {
-            // BAM representation issue -- we can't SOFTCLIP away all bases in a read, just leave it alone
-            myStop--; // just decrement stop
-        }
-
-        if (start > 0 && myStop != readCopied.getLength()) {
-            throw new GATKException(String.format("Cannot apply soft clipping operator to the middle of a read: %s to be clipped at %d-%d", readCopied.getName(), start, myStop));
-        }
+        // BAM representation issue -- we can't softclip all bases in a read, so clip all but one
+        final int myStop = Math.min(stop, start + readCopied.getLength() - 1);
+        Utils.validate(start <= 0 || myStop == readCopied.getLength(), () -> String.format("Cannot apply soft clipping operator to the middle of a read: %s to be clipped at %d-%d", readCopied.getName(), start, myStop));
 
         final Cigar oldCigar = readCopied.getCigar();
 
-        int scLeft = 0;
-        int scRight = readCopied.getLength();
-        if (start == 0) {
-            scLeft = myStop;
-        } else {
-            scRight = start;
-        }
-
-        final Cigar newCigar = softClip(oldCigar, scLeft, scRight);
+        final Cigar newCigar = softClipCigar(oldCigar, start, myStop);
         readCopied.setCigar(newCigar);
 
         final int newClippedStart = getNewAlignmentStartOffset(newCigar, oldCigar);
@@ -247,91 +225,44 @@ public final class ClippingOp {
     }
 
     /**
-     * Given a cigar string, soft clip up to startClipEnd and soft clip starting at endClipBegin
+     * Given a cigar string, soft clip up to leftClipEnd and soft clip starting at rightClipBegin
      */
-    private Cigar softClip(final Cigar __cigar, final int __startClipEnd, final int __endClipBegin) {
-        if (__endClipBegin <= __startClipEnd) {
-            //whole thing should be soft clipped
-            int cigarLength = 0;
-            for (final CigarElement e : __cigar.getCigarElements()) {
-                cigarLength += e.getLength();
-            }
+    private Cigar softClipCigar(final Cigar cigar, final int start, final int stop) {
+        final boolean clipLeft = start == 0;
 
-            final Cigar newCigar = new Cigar();
-            newCigar.add(new CigarElement(cigarLength, CigarOperator.SOFT_CLIP));
+        final Cigar newCigar = new Cigar();
 
-            return newCigar;
-        }
-
-        int curLength = 0;
-        final Vector<CigarElement> newElements = new Vector<>();
-        for (final CigarElement curElem : __cigar.getCigarElements()) {
-            if (!curElem.getOperator().consumesReadBases()) {
-                if (curElem.getOperator() == CigarOperator.HARD_CLIP || curLength > __startClipEnd && curLength < __endClipBegin) {
-                    newElements.add(new CigarElement(curElem.getLength(), curElem.getOperator()));
-                }
+        int elementStart = 0;
+        for (final CigarElement element : cigar.getCigarElements()) {
+            final CigarOperator operator = element.getOperator();
+            // copy hard clips
+            if (operator == CigarOperator.HARD_CLIP) {
+                newCigar.add(new CigarElement(element.getLength(), element.getOperator()));
                 continue;
             }
+            final int elementEnd = elementStart + (operator.consumesReadBases() ? element.getLength() : 0);
 
-            final int s = curLength;
-            final int e = curLength + curElem.getLength();
-            if (e <= __startClipEnd || s >= __endClipBegin) {
-                //must turn this entire thing into a clip
-                newElements.add(new CigarElement(curElem.getLength(), CigarOperator.SOFT_CLIP));
-            } else if (s >= __startClipEnd && e <= __endClipBegin) {
-                //same thing
-                newElements.add(new CigarElement(curElem.getLength(), curElem.getOperator()));
-            } else {
-                //we are clipping in the middle of this guy
-                CigarElement newStart = null;
-                CigarElement newMid = null;
-                CigarElement newEnd = null;
+            // element precedes start or follows end of soft clip, copy it to new cigar
+            if (elementEnd <= start || elementStart >= stop) {
+                newCigar.add(new CigarElement(element.getLength(), operator));
+            } else {    // otherwise, some or all of the element is soft-clipped
+                final int unclippedLength = clipLeft ? elementEnd - stop : start - elementStart;
+                final int clippedLength = element.getLength() - unclippedLength;
 
-                int midLength = curElem.getLength();
-                if (s < __startClipEnd) {
-                    newStart = new CigarElement(__startClipEnd - s, CigarOperator.SOFT_CLIP);
-                    midLength -= newStart.getLength();
-                }
-
-                if (e > __endClipBegin) {
-                    newEnd = new CigarElement(e - __endClipBegin, CigarOperator.SOFT_CLIP);
-                    midLength -= newEnd.getLength();
-                }
-                if (midLength > 0) {
-                    newMid = new CigarElement(midLength, curElem.getOperator());
-                }
-                if (newStart != null) {
-                    newElements.add(newStart);
-                }
-                if (newMid != null) {
-                    newElements.add(newMid);
-                }
-                if (newEnd != null) {
-                    newElements.add(newEnd);
+                if (unclippedLength == 0) {
+                    newCigar.add(new CigarElement(clippedLength, CigarOperator.SOFT_CLIP));
+                } else if (clipLeft) {
+                    newCigar.add(new CigarElement(clippedLength, CigarOperator.SOFT_CLIP));
+                    newCigar.add(new CigarElement(unclippedLength, operator));
+                } else {
+                    newCigar.add(new CigarElement(unclippedLength, operator));
+                    newCigar.add(new CigarElement(clippedLength, CigarOperator.SOFT_CLIP));
                 }
             }
-            curLength += curElem.getLength();
+            elementStart = elementEnd;
         }
 
-        final Vector<CigarElement> finalNewElements = new Vector<>();
-        CigarElement lastElement = null;
-        for (final CigarElement elem : newElements) {
-            if (lastElement == null || lastElement.getOperator() != elem.getOperator()) {
-                if (lastElement != null) {
-                    finalNewElements.add(lastElement);
-                }
-                lastElement = elem;
-            } else {
-                lastElement = new CigarElement(lastElement.getLength() + elem.getLength(), lastElement.getOperator());
-            }
-        }
-        if (lastElement != null) {
-            finalNewElements.add(lastElement);
-        }
-
-        final Cigar newCigar = new Cigar(finalNewElements);
-
-        return newCigar;
+        return CigarUtils.combineAdjacentCigarElements(newCigar);
     }
 
     /**
