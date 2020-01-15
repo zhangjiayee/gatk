@@ -4,9 +4,9 @@ import htsjdk.samtools.CigarElement;
 import htsjdk.samtools.CigarOperator;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.read.CigarUtils;
+import org.broadinstitute.hellbender.utils.read.ClippingTail;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.hellbender.utils.read.ReadUtils;
 
@@ -416,8 +416,8 @@ public class ReadClipper {
         }
         Utils.validate(!(clippingOp == ClippingRepresentation.SOFTCLIP_BASES && read.isUnmapped()), () -> "Cannot soft-clip read "+read.commonToString()+" by reference coordinates because it is unmapped");
 
-        final int start = refStart < 0 ? 0 : ReadUtils.getReadCoordinateForReferenceCoordinate(read, refStart, ReadUtils.ClippingTail.RIGHT_TAIL);
-        final int stop = refStart < 0 ? ReadUtils.getReadCoordinateForReferenceCoordinate(read, refStop, ReadUtils.ClippingTail.LEFT_TAIL) + 1 : read.getLength();
+        final int start = refStart < 0 ? 0 : ReadUtils.getReadCoordinateForReferenceCoordinate(read, refStart, ClippingTail.RIGHT_TAIL);
+        final int stop = refStart < 0 ? ReadUtils.getReadCoordinateForReferenceCoordinate(read, refStop, ClippingTail.LEFT_TAIL) + 1 : read.getLength();
 
         Utils.validate(start >= 0 && stop <= read.getLength(), "Trying to clip before the start or after the end of a read");
         Utils.validate( start < stop, () -> String.format("START (%d) >= (%d) STOP -- this should never happen, please check read: %s (CIGAR: %s)", start, stop, read, read.getCigar().toString()));
