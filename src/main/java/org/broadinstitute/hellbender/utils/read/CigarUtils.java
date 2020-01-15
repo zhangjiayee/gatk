@@ -443,7 +443,9 @@ public final class CigarUtils {
                 final int clippedLength = element.getLength() - unclippedLength;
 
                 if (unclippedLength <= 0) { // totally clipped
-                    newCigar.add(new CigarElement(element.getLength(), clippingOperator));
+                    if (operator.consumesReadBases()) {
+                        newCigar.add(new CigarElement(element.getLength(), clippingOperator));
+                    }
                 } else if (clipLeft) {
                     newCigar.add(new CigarElement(clippedLength, clippingOperator));
                     newCigar.add(new CigarElement(unclippedLength, operator));

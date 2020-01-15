@@ -462,22 +462,36 @@ public final class CigarUtilsUnitTest {
         Assert.assertEquals(CigarUtils.revertSoftClips(TextCigarCodec.decode(original)).toString(), expected);
     }
 
-    @DataProvider(name = "soft_clip_cigar")
-    public Object[][] softClipCigar() {
+    @DataProvider(name = "clip_cigar")
+    public Object[][] ClipCigar() {
         return new Object[][] {
-                {"10M", 0, 5, "5S5M"},
-                {"10M", 5, 10, "5M5S"},
-                {"10H10M", 0, 5, "10H5S5M"},
-                {"10H10M", 5, 10, "10H5M5S"},
-                {"10M10H", 0, 5, "5S5M10H"},
+                //simple cases
+                {"10M", 0, 5, "5S5M", "5H5M"},
+                {"10M", 5, 10, "5M5S", "5M5H"},
+                {"10H10M", 0, 5, "10H5S5M", "15H5M"},
+                {"10H10M", 5, 10, "10H5M5S", "10H5M5H"},
+                {"10M10H", 0, 5, "5S5M10H", "5H5M10H"},
 
-                {"10M10I10M", 0, 5, "5S5M10I10M"},
-                {"10M10I10M", 0, 15, "15S5I10M"}
+                // clipping into insertion
+                {"10M10I10M", 0, 5, "5S5M10I10M", "5H5M10I10M"},
+                {"10M10I10M", 0, 15, "15S5I10M", "15H5I10M"},
+                {"10M10I10M", 15, 30, "10M5I15S", "10M5I15H"},
+
+                // clipping into a soft clip
+                {"10S10M10S", 0, 5, "10S10M10S", "5H5S10M10S"},
+                {"10S10M10S", 25, 30, "10S10M10S", "10S10M5S5H"},
+                {"10S10M10S", 0, 15, "15S5M10S", "15H5M10S"},
+
+                // clipping over a deletion
+                {"10M10D10M", 0, 10, "10S10M", "10H10M"},
+                {"10M10D10M", 0, 15, "15S5M", "15H5M"},
+                {"10M10D10M", 15, 30, "5M15S", "5M15H"}
         };
     }
 
-    @Test(dataProvider = "soft_clip_cigar")
-    public void testSoftClipCigar(final String original, final int start, final int stop, final String expected) {
-        Assert.assertEquals(CigarUtils.clipCigar(TextCigarCodec.decode(original), start, stop, CigarOperator.SOFT_CLIP).toString(), expected);
+    @Test(dataProvider = "clip_cigar")
+    public void testClipCigar(final String original, final int start, final int stop, final String expectedSoftClip, final String expectedHardClip) {
+        Assert.assertEquals(CigarUtils.clipCigar(TextCigarCodec.decode(original), start, stop, CigarOperator.SOFT_CLIP).toString(), expectedSoftClip);
+        Assert.assertEquals(CigarUtils.clipCigar(TextCigarCodec.decode(original), start, stop, CigarOperator.HARD_CLIP).toString(), expectedHardClip);
     }
 }
