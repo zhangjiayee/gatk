@@ -512,7 +512,7 @@ public final class CigarUtilsUnitTest {
                 {"30M10I30M", 41, 31},
 
                 {"10H10M", 5, 5},
-                {"10S10M", 5, 0}, 
+                {"10S10M", 5, 0},
                 {"10S10M", 5, 0},
         };
     }
