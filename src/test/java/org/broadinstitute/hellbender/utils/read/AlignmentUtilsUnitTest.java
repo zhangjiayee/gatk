@@ -283,54 +283,6 @@ public final class AlignmentUtilsUnitTest {
         return new MutatedSequence(mismatches, hap);
     }
 
-    @DataProvider(name = "ComplexReadAlignedToRef")
-    public Object[][] makeComplexReadAlignedToRef() {
-        List<Object[]> tests = new ArrayList<>();
-
-        final List<Mutation> allMutations = Arrays.asList(
-                new Mutation(1, 1, CigarOperator.M),
-                new Mutation(2, 1, CigarOperator.M),
-                new Mutation(3, 1, CigarOperator.I),
-                new Mutation(7, 1, CigarOperator.D)
-        );
-
-        int i = 0;
-        final String referenceBases  = "ACTGACTGACTG";
-        final String paddedReference = "NNNN" + referenceBases + "NNNN";
-        for ( final List<Mutation> mutations : Utils.makePermutations(allMutations, 3, false) ) {
-            final MutatedSequence hap = mutateSequence(referenceBases, mutations);
-            final Haplotype haplotype = new Haplotype(hap.seq.getBytes());
-            final SmithWatermanAlignment align = SmithWatermanJavaAligner.getInstance()
-                    .align(paddedReference.getBytes(), hap.seq.getBytes(), SmithWatermanAligner.ORIGINAL_DEFAULT, SWOverhangStrategy.SOFTCLIP);
-            haplotype.setAlignmentStartHapwrtRef(align.getAlignmentOffset());
-            haplotype.setCigar(align.getCigar());
-
-            for ( final List<Mutation> readMutations : Utils.makePermutations(allMutations, 3, false) ) {
-                final MutatedSequence readBases = mutateSequence(hap.seq, readMutations);
-                final GATKRead read = makeReadForAlignedToRefTest(readBases.seq);
-                tests.add(new Object[]{i++, read, paddedReference, haplotype, hap.numMismatches + readBases.numMismatches});
-            }
-        }
-
-        // for convenient testing of a single failing case
-        //tests.add(new Object[]{makeRead("ACCGGGACTGACTG"), reference, makeHaplotype("AAAGGACTGACTG", "1M1I11M"), 2});
-
-        return tests.toArray(new Object[][]{});
-    }
-
-    @Test(dataProvider = "ComplexReadAlignedToRef")
-    public void testReadAlignedToRefComplexAlignment(final int testIndex, final GATKRead read, final String reference, final Haplotype haplotype, final int expectedMaxMismatches) throws Exception {
-        final GATKRead alignedRead = AlignmentUtils.createReadAlignedToRef(read, haplotype, new Haplotype(reference.getBytes(),true), 1, true, SmithWatermanJavaAligner
-                .getInstance());
-        if ( alignedRead != null ) {
-            final int mismatches = AlignmentUtils.getMismatchCount(alignedRead, reference.getBytes(), alignedRead.getStart() - 1).numMismatches;
-            Assert.assertTrue(mismatches <= expectedMaxMismatches,
-                    "Alignment of read to ref looks broken.  Expected at most " + expectedMaxMismatches + " but saw " + mismatches
-                            + " for readBases " + new String(read.getBases()) + " with cigar " + read.getCigar() + " reference " + reference + " haplotype "
-                            + haplotype + " with cigar " + haplotype.getCigar() + " aligned read cigar " + alignedRead.getCigar().toString() + " @ " + alignedRead.getStart());
-        }
-    }
-
     /**********************************************************
      * End of Tests for AlignmentUtils.createReadAlignedToRef()
      **********************************************************/
@@ -521,77 +473,6 @@ public final class AlignmentUtilsUnitTest {
 
         final int actual = AlignmentUtils.calcNumHighQualitySoftClips(read, (byte) qualThreshold);
         Assert.assertEquals(actual, numExpected, "Wrong number of soft clips detected for read " + read.toString());
-    }
-
-    ////////////////////////////////////////////
-    // Test AlignmentUtils.getMismatchCount() //
-    ////////////////////////////////////////////
-
-    @DataProvider(name = "MismatchCountDataProvider")
-    public Object[][] makeMismatchCountDataProvider() {
-        List<Object[]> tests = new ArrayList<>();
-
-        final int readLength = 20;
-        final int lengthOfIndel = 2;
-        final int locationOnReference = 10;
-        final byte[] reference = Utils.dupBytes((byte)'A', readLength);
-        final byte[] quals = Utils.dupBytes((byte)'A', readLength);
-
-
-        for ( int startOnRead = 0; startOnRead <= readLength; startOnRead++ ) {
-            for ( int basesToRead = 0; basesToRead <= readLength; basesToRead++ ) {
-                for ( final int lengthOfSoftClip : Arrays.asList(0, 1, 10) ) {
-                    for ( final int lengthOfFirstM : Arrays.asList(0, 3) ) {
-                        for ( final char middleOp : Arrays.asList('M', 'D', 'I') ) {
-                            for ( final int mismatchLocation : Arrays.asList(-1, 0, 5, 10, 15, 19) ) {
-
-                                final GATKRead read = ArtificialReadUtils.createArtificialRead(header, "myRead", 0, locationOnReference, readLength);
-
-                                // set the read's bases and quals
-                                final byte[] readBases = Arrays.copyOf(reference, reference.length);
-                                // create the mismatch if requested
-                                if ( mismatchLocation != -1 )
-                                    readBases[mismatchLocation] = (byte)'C';
-                                read.setBases(readBases);
-                                read.setBaseQualities(quals);
-
-                                // create the CIGAR string
-                                read.setCigar(buildTestCigarString(middleOp, lengthOfSoftClip, lengthOfFirstM, lengthOfIndel, readLength));
-
-                                // now, determine whether or not there's a mismatch
-                                final boolean isMismatch;
-                                if ( mismatchLocation < startOnRead || mismatchLocation >= startOnRead + basesToRead || mismatchLocation < lengthOfSoftClip ) {
-                                    isMismatch = false;
-                                } else if ( middleOp == 'M' || middleOp == 'D' || mismatchLocation < lengthOfSoftClip + lengthOfFirstM || mismatchLocation >= lengthOfSoftClip + lengthOfFirstM + lengthOfIndel ) {
-                                    isMismatch = true;
-                                } else {
-                                    isMismatch = false;
-                                }
-
-                                tests.add(new Object[]{read, locationOnReference, startOnRead, basesToRead, isMismatch});
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Adding test to make sure soft-clipped reads go through the exceptions thrown at the beginning of the getMismatchCount method
-        // todo: incorporate cigars with right-tail soft-clips in the systematic tests above.
-        GATKRead read = ArtificialReadUtils.createArtificialRead(header, "myRead", 0, 10, 20);
-        read.setBases(reference);
-        read.setBaseQualities(quals);
-        read.setCigar("10S5M5S");
-        tests.add(new Object[]{read, 10, read.getStart(), read.getLength(), false});
-
-        return tests.toArray(new Object[][]{});
-    }
-
-    @Test(enabled = !DEBUG, dataProvider = "MismatchCountDataProvider")
-    public void testMismatchCountData(final GATKRead read, final int refIndex, final int startOnRead, final int basesToRead, final boolean isMismatch) {
-        final byte[] reference = Utils.dupBytes((byte)'A', 100);
-        final int actual = AlignmentUtils.getMismatchCount(read, reference, refIndex, startOnRead, basesToRead).numMismatches;
-        Assert.assertEquals(actual, isMismatch ? 1 : 0, "Wrong number of mismatches detected for read " + read.toString());
     }
 
     private static String buildTestCigarString(final char middleOp, final int lengthOfSoftClip, final int lengthOfFirstM, final int lengthOfIndel, final int readLength) {
