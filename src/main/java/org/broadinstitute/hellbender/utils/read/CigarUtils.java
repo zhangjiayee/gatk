@@ -460,4 +460,30 @@ public final class CigarUtils {
         return newCigar.make();
     }
 
+    /**
+     * How many bases to the right does a read's alignment start shift given its cigar and the number of left soft clips
+     */
+    public static int alignmentStartShift(final Cigar cigar, final int numClipped) {
+        int refBasesClipped = 0;
+
+        int elementStart = 0;   // this and elementEnd are indices in the read's bases
+        for (final CigarElement element : cigar.getCigarElements()) {
+            final CigarOperator operator = element.getOperator();
+            // hard clips consume neither read bases nor reference bases and are irrelevant
+            if (operator == CigarOperator.HARD_CLIP) {
+                continue;
+            }
+            final int elementEnd = elementStart + (operator.consumesReadBases() ? element.getLength() : 0);
+
+            if (elementEnd <= numClipped) {  // totally within clipped span -- this includes deletions immediately following clipping
+                refBasesClipped += operator.consumesReferenceBases() ? element.getLength() : 0;
+            } else if (elementStart < numClipped) { // clip in middle of element, which means the element necessarily consumes read bases
+                final int clippedLength = numClipped - elementStart;
+                refBasesClipped += operator.consumesReferenceBases() ? clippedLength : 0;
+                break;
+            }
+            elementStart = elementEnd;
+        }
+        return refBasesClipped;
+    }
 }

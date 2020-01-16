@@ -1,6 +1,5 @@
 package org.broadinstitute.hellbender.utils.clipping;
 
-import com.google.common.annotations.VisibleForTesting;
 import htsjdk.samtools.Cigar;
 import htsjdk.samtools.CigarElement;
 import htsjdk.samtools.CigarOperator;
@@ -94,8 +93,8 @@ public final class ClippingOp {
         final Cigar newCigar = CigarUtils.clipCigar(oldCigar, start, myStop, CigarOperator.SOFT_CLIP);
         readCopied.setCigar(newCigar);
 
-        final int newClippedStart = getNewAlignmentStartOffset(newCigar, oldCigar);
-        final int newStart = readCopied.getStart() + newClippedStart;
+        final int alignmentStartShift = start == 0 ? CigarUtils.alignmentStartShift(oldCigar, stop) : 0;
+        final int newStart = readCopied.getStart() + alignmentStartShift;
         readCopied.setPosition(readCopied.getContig(), newStart);
         return readCopied;
     }
@@ -161,65 +160,6 @@ public final class ClippingOp {
     }
 
     /**
-     * Given two cigar strings corresponding to read before and after soft-clipping, returns an integer
-     * corresponding to the number of reference bases that the new string must be offset by in order to have the
-     * correct start according to the reference.
-     *
-     * @param clippedCigar the new cigar string after clipping
-     * @param oldCigar     the cigar string of the read before it was soft clipped
-     */
-    @VisibleForTesting
-    static int getNewAlignmentStartOffset(final Cigar clippedCigar, final Cigar oldCigar) {
-        int readBasesBeforeReference = 0; // The number of read bases consumed on the new cigar before reference bases are consumed
-
-        int basesBeforeReferenceOld = 0; // The number of read bases consumed on the old cigar before reference bases are consumed
-        int curReadCounter = 0; // A measure of the reference offset between the oldCigar and the clippedCigar
-
-        for (final CigarElement e : clippedCigar.getCigarElements()) {
-            if (!e.getOperator().consumesReferenceBases()) {
-                if (e.getOperator().consumesReadBases()) {
-                    readBasesBeforeReference += e.getLength();
-                }
-            } else {
-                if (!e.getOperator().consumesReadBases()) {
-                    basesBeforeReferenceOld -= e.getLength(); // Accounting for any D or N cigar operators at the front of the string
-                } else {
-                    break;
-                }
-            }
-        }
-
-        for (final CigarElement e : oldCigar.getCigarElements()) {
-            int curReadLength = e.getLength();
-            int curRefLength = e.getLength();
-            if (!e.getOperator().consumesReadBases()) {
-                curReadLength = 0;
-            }
-
-            final boolean truncated = curReadCounter + curReadLength > readBasesBeforeReference;
-
-
-            if (truncated) {
-                curReadLength = readBasesBeforeReference - curReadCounter;
-                curRefLength = readBasesBeforeReference - curReadCounter;
-            }
-
-            if (!e.getOperator().consumesReferenceBases()) {
-                curRefLength = 0;
-            }
-
-            curReadCounter += curReadLength;
-            basesBeforeReferenceOld += curRefLength;
-
-            if (curReadCounter > readBasesBeforeReference || truncated) {
-                break;
-            }
-        }
-
-        return Math.abs(basesBeforeReferenceOld); // if oldNum is negative it means some of the preceding N/Ds were trimmed but not all so we take absolute value
-    }
-
-    /**
      * Hard clip bases from read, from start to stop in base coordinates
      * <p>
      * If start == 0, then we will clip from the front of the read, otherwise we clip
@@ -268,7 +208,7 @@ public final class ClippingOp {
         hardClippedRead.setBases(newBases);
         hardClippedRead.setCigar(newCigar);
         if (start == 0 && !read.isUnmapped()) {
-            hardClippedRead.setPosition(read.getContig(), read.getStart() + calculateAlignmentStartShift(cigar, stop - start));
+            hardClippedRead.setPosition(read.getContig(), read.getStart() + CigarUtils.alignmentStartShift(cigar, stop));
         }
 
         if (ReadUtils.hasBaseIndelQualities(read)) {
@@ -281,64 +221,5 @@ public final class ClippingOp {
         }
 
         return hardClippedRead;
-
-    }
-
-    /**
-     * Calculates how much the alignment should be shifted when hard/soft clipping is applied
-     * to the cigar
-     *
-     * @param oldCigar            the original CIGAR
-     * @param newReadBasesClipped - number of bases of the read clipped
-     * @return int - the offset between the alignment starts in the oldCigar and in
-     * the cigar after applying clipping
-     */
-    private int calculateAlignmentStartShift(final Cigar oldCigar, final int newReadBasesClipped) {
-
-        int readBasesClipped = 0; // The number of read bases consumed on the new cigar before reference bases are consumed
-        int refBasesClipped = 0; // A measure of the reference offset between the oldCigar and the clippedCigar
-
-        final Iterator<CigarElement> iterator = oldCigar.getCigarElements().iterator();
-        boolean truncated=false;
-
-        while (iterator.hasNext()) {
-            final CigarElement e = iterator.next();
-
-            int curRefLength = e.getLength();
-            int curReadLength = e.getOperator().consumesReadBases() ? e.getLength() : 0;
-
-
-            truncated = readBasesClipped + curReadLength > newReadBasesClipped;
-            if (truncated) {
-                curReadLength = newReadBasesClipped - readBasesClipped;
-                curRefLength = curReadLength;
-            }
-
-            if (!e.getOperator().consumesReferenceBases()) {
-                curRefLength = 0;
-            }
-
-            readBasesClipped += curReadLength;
-            refBasesClipped += curRefLength;
-
-            if (readBasesClipped >= newReadBasesClipped || truncated) {
-                break;
-            }
-        }
-
-        // needed only if the clipping ended at a cigar element boundary and is followed by either N or D
-        if (readBasesClipped == newReadBasesClipped && !truncated) {
-            while (iterator.hasNext()) {
-                final CigarElement e = iterator.next();
-
-                if (e.getOperator().consumesReadBases() || !e.getOperator().consumesReferenceBases()) {
-                    break;
-                }
-
-                refBasesClipped += e.getLength();
-            }
-        }
-
-        return refBasesClipped;
     }
 }

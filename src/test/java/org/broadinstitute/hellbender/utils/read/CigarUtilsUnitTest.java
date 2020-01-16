@@ -494,4 +494,33 @@ public final class CigarUtilsUnitTest {
         Assert.assertEquals(CigarUtils.clipCigar(TextCigarCodec.decode(original), start, stop, CigarOperator.SOFT_CLIP).toString(), expectedSoftClip);
         Assert.assertEquals(CigarUtils.clipCigar(TextCigarCodec.decode(original), start, stop, CigarOperator.HARD_CLIP).toString(), expectedHardClip);
     }
+
+    @DataProvider(name = "alignment_start_shift")
+    public Object[][] alignmentStartShift() {
+        return new Object[][] {
+                {"70M", 10, 10},
+                {"70M", 0, 0},
+
+                {"30M10D30M", 29, 29},
+                {"30M10D30M", 30, 40},
+                {"30M10D30M", 31, 41},
+
+                {"30M10D30M", 29, 29},
+                {"30M10I30M", 30, 30},
+                {"30M10I30M", 31, 30},
+                {"30M10I30M", 40, 30},
+                {"30M10I30M", 41, 31},
+
+                {"10H10M", 5, 5},
+                {"10S10M", 5, 0}, 
+                {"10S10M", 5, 0},
+        };
+    }
+
+    @Test(dataProvider = "alignment_start_shift")
+    public void testAlignmentStartShift(final String cigarString, final int numClips, final int expectedResult) {
+        final Cigar cigar = TextCigarCodec.decode(cigarString);
+        final int actualResult = CigarUtils.alignmentStartShift(cigar, numClips);
+        Assert.assertEquals(actualResult, expectedResult);
+    }
 }
