@@ -2,6 +2,8 @@ package org.broadinstitute.hellbender.tools.spark.longread;
 
 import htsjdk.samtools.CigarElement;
 import htsjdk.samtools.CigarOperator;
+import htsjdk.samtools.SAMFileHeader;
+import htsjdk.samtools.SAMSequenceRecord;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -11,11 +13,23 @@ import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.BetaFeature;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
 import org.broadinstitute.barclay.help.DocumentedFeature;
+import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
 import org.broadinstitute.hellbender.cmdline.programgroups.LongReadAnalysisProgramGroup;
 import org.broadinstitute.hellbender.engine.filters.ReadFilter;
+import org.broadinstitute.hellbender.engine.filters.ReadFilterLibrary;
 import org.broadinstitute.hellbender.engine.spark.GATKSparkTool;
+import org.broadinstitute.hellbender.exceptions.UserException;
+import org.broadinstitute.hellbender.tools.spark.sv.evidence.AlignedAssemblyOrExcuse;
+import org.broadinstitute.hellbender.tools.spark.sv.utils.SVInterval;
+import org.broadinstitute.hellbender.utils.Utils;
+import org.broadinstitute.hellbender.utils.gcs.BucketUtils;
+import org.broadinstitute.hellbender.utils.io.IOUtils;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 
+import java.io.BufferedOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 
@@ -56,25 +70,28 @@ public class ExtractAlignmentsWithStrangeCigarSpark extends GATKSparkTool {
         return true;
     }
 
-    public static final String NEIGHBOR_INSDEL_OP = "YG";
+    @Override
+    public List<ReadFilter> getDefaultReadFilters() {
+        return Arrays.asList(new ReadFilterLibrary.AllowAllReadsReadFilter());
+    }
+
     public static final String NEIGHBOR_CLIPGAP_OP = "YS";
+    public static final String NEIGHBOR_INSDEL_OP = "YG";
     public static final String SEMI_NEIGHBOR_INSDEL_OP = "YC";
 
     static final int ALIGNMENT_TOO_SHORT_ABSOLUTE_THRESHOLD = 3;
+
+
+    @Argument(doc = "prefix for output files",
+            shortName = StandardArgumentDefinitions.OUTPUT_SHORT_NAME,
+            fullName = StandardArgumentDefinitions.OUTPUT_LONG_NAME)
+    private String outputPrefix;
 
     @Argument(doc = "for CIGARs that have closely neighbored gaps separated only by a small alignment block, " +
             "the triggering threshold below which fraction of the alignment size to the size of the smaller gaps",
             shortName = "f", fullName = "fraction",
             optional = true)
     private Double fraction = 0.1;
-
-    @Argument(doc = "uri for the output bam keeping the alignments whose CIGARs are considered strange",
-            shortName = "s", fullName = "strange")
-    private String strangeOut;
-
-    @Argument(doc = "uri for the output bam keeping the alignments whose CIGARs are not considered strange",
-            shortName = "k", fullName = "keep")
-    private String normalOut;
 
     @Override
     protected void runTool( final JavaSparkContext ctx ) {
@@ -84,8 +101,11 @@ public class ExtractAlignmentsWithStrangeCigarSpark extends GATKSparkTool {
         final CloselyNeighboringGaps closelyNeighboringGaps = new CloselyNeighboringGaps(fraction);
 
         final JavaRDD<GATKRead> allReads = getReads().cache();
-        final JavaRDD<GATKRead> annotatedReads = allReads
-                .filter(r -> !r.isUnmapped())
+        final JavaRDD<GATKRead> mappedReads = allReads.filter(r -> !r.isUnmapped()).cache();
+        final JavaRDD<GATKRead> unmappedReads = allReads.filter(GATKRead::isUnmapped).cache();
+        allReads.unpersist(false);
+
+        final JavaRDD<GATKRead> annotatedReads = mappedReads
                 .map(read -> {
                     GATKRead copy = read.copy();
                     if (catchNonAlnNeighboringClip.test(read)) {
@@ -99,33 +119,51 @@ public class ExtractAlignmentsWithStrangeCigarSpark extends GATKSparkTool {
                     }
                     return copy;
                 }).cache();
-        final JavaRDD<GATKRead> unmappedReads = allReads.filter(GATKRead::isUnmapped).cache();
-        allReads.unpersist(false);
 
-        final JavaRDD<GATKRead> strangeCigaredReads = annotatedReads
-                .filter(read ->
-                        read.hasAttribute(NEIGHBOR_INSDEL_OP)
-                                || read.hasAttribute(NEIGHBOR_CLIPGAP_OP)
-                                || read.hasAttribute(SEMI_NEIGHBOR_INSDEL_OP)
-                );
-        writeReads(ctx, strangeOut, strangeCigaredReads, getHeaderForReads(), true);
-        localLogger.warn(String.format("Total number of strange alignment records: %d", strangeCigaredReads.count()));
+        final JavaRDD<GATKRead> neighborClipGap = annotatedReads.filter(read -> read.hasAttribute(NEIGHBOR_CLIPGAP_OP));
+        try ( final OutputStreamWriter writer =
+                      new OutputStreamWriter(new BufferedOutputStream(BucketUtils.createFile(outputPrefix + ".YS.txt"))) ) {
+            final List<String> collect = neighborClipGap.map(GATKRead::getName).distinct().collect();
+            for (final String s : collect) { writer.write(s + "\n"); }
+        } catch ( final IOException ioe ) {
+            throw new UserException.CouldNotCreateOutputFile("Can't write intervals file " + outputPrefix + ".YS.txt", ioe);
+        }
+        final long countOfClippingNeighboringIndel = neighborClipGap.count();
+        neighborClipGap.unpersist();
 
-        final long countOfNeighboringIndel = strangeCigaredReads.filter(read -> read.hasAttribute(NEIGHBOR_INSDEL_OP)).count();
-        final long countOfClippingNeighboringIndel = strangeCigaredReads.filter(read -> read.hasAttribute(NEIGHBOR_CLIPGAP_OP)).count();
-        final long countOfCloselyNeighboredIndel = strangeCigaredReads.filter(read -> read.hasAttribute(SEMI_NEIGHBOR_INSDEL_OP)).count();
+        final JavaRDD<GATKRead> neighborIndel = annotatedReads.filter(read -> read.hasAttribute(NEIGHBOR_INSDEL_OP));
+        try ( final OutputStreamWriter writer =
+                      new OutputStreamWriter(new BufferedOutputStream(BucketUtils.createFile(outputPrefix + ".YG.txt"))) ) {
+            final List<String> collect = neighborIndel.map(r -> r.getName() + "\t" + r.getAttributeAsString(NEIGHBOR_INSDEL_OP)).distinct().collect();
+            for (final String s : collect) { writer.write(s + "\n"); }
+        } catch ( final IOException ioe ) {
+            throw new UserException.CouldNotCreateOutputFile("Can't write intervals file " + outputPrefix + ".YG.txt", ioe);
+        }
+        final long countOfNeighboringIndel = neighborIndel.count();
+        neighborIndel.unpersist();
+
+        final JavaRDD<GATKRead> semiNeighborInDel = annotatedReads.filter(read -> read.hasAttribute(SEMI_NEIGHBOR_INSDEL_OP));
+        try ( final OutputStreamWriter writer =
+                      new OutputStreamWriter(new BufferedOutputStream(BucketUtils.createFile(outputPrefix + ".YC.txt"))) ) {
+            final List<String> collect = semiNeighborInDel.map(r -> r.getName() + "\t" + r.getAttributeAsString(SEMI_NEIGHBOR_INSDEL_OP)).distinct().collect();
+            for (final String s : collect) { writer.write(s + "\n"); }
+        } catch ( final IOException ioe ) {
+            throw new UserException.CouldNotCreateOutputFile("Can't write intervals file " + outputPrefix + ".YC.txt", ioe);
+        }
+        final long countOfCloselyNeighboredIndel = semiNeighborInDel.count();
+        semiNeighborInDel.unpersist();
+
         String message  = "The input alignments has \n";
-               message += String.format("  %d records with neighboring indel operations\n", countOfNeighboringIndel);
                message += String.format("  %d records with clipping neighboring an indel\n", countOfClippingNeighboringIndel);
+               message += String.format("  %d records with neighboring indel operations\n", countOfNeighboringIndel);
                message += String.format("  %d records with small alignment sandwiched between large indels", countOfCloselyNeighboredIndel);
         localLogger.info(message);
 
-        final List<String> collect = strangeCigaredReads.map(GATKRead::getName).collect();
-        final HashSet<String> readNamesToDrop = new HashSet<>(collect);
-        final JavaRDD<GATKRead> normalCigaredReads = annotatedReads.filter(read -> !readNamesToDrop.contains(read.getName()));
-        final JavaRDD<GATKRead> kept = normalCigaredReads.union(unmappedReads);
-        writeReads(ctx, normalOut, kept, getHeaderForReads(), true);
-        localLogger.warn(String.format("Total number of normal alignment records: %d", kept.count()));
+        final JavaRDD<GATKRead> normalMappedReads = annotatedReads
+                .filter(read -> !(read.hasAttribute(NEIGHBOR_CLIPGAP_OP) || read.hasAttribute(NEIGHBOR_INSDEL_OP) || read.hasAttribute(SEMI_NEIGHBOR_INSDEL_OP)));
+        final JavaRDD<GATKRead> normal = normalMappedReads.union(unmappedReads);
+        writeReads(ctx, outputPrefix + ".normal.bam", normal, getHeaderForReads(), true);
+        localLogger.warn(String.format("Total number of normal alignment records: %d", normal.count()));
     }
 
     /**
