@@ -2,6 +2,7 @@ package org.broadinstitute.hellbender.tools.spark.longread;
 
 import htsjdk.samtools.SAMFileHeader;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.VoidFunction;
 import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.BetaFeature;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
@@ -17,7 +18,6 @@ import org.broadinstitute.hellbender.utils.read.ReadUtils;
 import org.broadinstitute.hellbender.utils.read.SAMFileGATKReadWriter;
 import scala.Tuple2;
 
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 
@@ -57,33 +57,40 @@ public class SplitLongReadAssemblyBAMByContigSpark extends GATKSparkTool {
     @Override
     protected void runTool(final JavaSparkContext ctx) {
 
-        final SAMFileHeader headerForReads = getHeaderForReads();
-        final Path referencePath = referenceArguments.getReferencePath();
-
+        final MyFunction myFunction = new MyFunction(getHeaderForReads(), outdir);
         getReads()
                 .groupBy(GATKRead::getName)
-                .foreach(pair -> writeAlignmentsForOneContig(outdir, referencePath, headerForReads, pair));
+                .foreach(myFunction);
     }
 
-    // write alignments for each contig
-    private static void writeAlignmentsForOneContig(final String outdir,
-                                                    final Path referencePath,
-                                                    final SAMFileHeader headerForReads,
-                                                    final Tuple2<String, Iterable<GATKRead>> readGroupedByName) {
-        final String readName = readGroupedByName._1();
-        final Iterable<GATKRead> gatkReads = readGroupedByName._2();
-        final String output = outdir + "." + readName + ".bam";
-        try (final SAMFileGATKReadWriter outputWriter = new SAMFileGATKReadWriter(
-                ReadUtils.createCommonSAMWriter(
-                        IOUtils.getPath(output),
-                        referencePath,
-                        headerForReads,
-                        false,
-                        true,
-                        false
-                )
-        )){
-            gatkReads.forEach(outputWriter::addRead);
+    private static class MyFunction implements VoidFunction<Tuple2<String, Iterable<GATKRead>>> {
+        private static final long serialVersionUID = 1L;
+
+        private final SAMFileHeader headerForReads;
+        private final String outputDir;
+
+        MyFunction(final SAMFileHeader headerForReads, final String outputDir) {
+            this.headerForReads = headerForReads;
+            this.outputDir = outputDir;
+        }
+
+        @Override
+        public void call(final Tuple2<String, Iterable<GATKRead>> pair) throws Exception {
+            final String readName = pair._1();
+            final Iterable<GATKRead> gatkReads = pair._2();
+            final String output = outputDir + (outputDir.endsWith("/") ? "" : "/") + readName + ".bam";
+            try (final SAMFileGATKReadWriter outputWriter = new SAMFileGATKReadWriter(
+                    ReadUtils.createCommonSAMWriter(
+                            IOUtils.getPath(output),
+                            null,
+                            headerForReads,
+                            false,
+                            true,
+                            false
+                    )
+            )){
+                gatkReads.forEach(outputWriter::addRead);
+            }
         }
     }
 }
