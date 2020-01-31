@@ -1,9 +1,11 @@
 package org.broadinstitute.hellbender.tools;
 
 import htsjdk.samtools.SamReaderFactory;
+import htsjdk.samtools.ValidationStringency;
 import org.broadinstitute.hellbender.GATKBaseTest;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
 import org.broadinstitute.hellbender.testutils.ArgumentsBuilder;
+import org.broadinstitute.hellbender.testutils.IntegrationTestSpec;
 import org.broadinstitute.hellbender.testutils.SamAssertionUtils;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.testng.Assert;
@@ -42,19 +44,29 @@ public final class PrintReadsIntegrationTest extends AbstractPrintReadsIntegrati
         Assert.assertNotNull(SamReaderFactory.makeDefault().open(outFile).getFileHeader().getProgramRecord("GATK PrintReads.1"));
     }
 
-    @Test
-    public void testHTTP(){
-        ArgumentsBuilder args = new ArgumentsBuilder();
-        File out = createTempFile("out", ".bam");
+    @Test(groups={"cloud", "bucket"})
+    public void testHTTP() throws IOException {
+        final ArgumentsBuilder args = new ArgumentsBuilder();
+        final File out = createTempFile("out", ".bam");
         args.addArgument("I", "https://storage.googleapis.com/hellbender/test/resources/benchmark/CEUTrio.HiSeq.WEx.b37.NA12892.bam")
-                        .addArgument("read-index", "https://storage.googleapis.com/hellbender/test/resources/benchmark/CEUTrio.HiSeq.WEx.b37.NA12892.bam.bai")
-                        .addOutput(out)
-                        .addInterval(new SimpleInterval("3",1_000_000, 1_000_001))
-                        .addInterval(new SimpleInterval("3", 1_000_003, 1_000_100))
-                        .addInterval(new SimpleInterval("20", 1_000_000, 1_100_000));
-
+                .addArgument("read-index", "https://storage.googleapis.com/hellbender/test/resources/benchmark/CEUTrio.HiSeq.WEx.b37.NA12892.bam.bai")
+                .addOutput(out)
+                .addInterval(new SimpleInterval("3",1_000_000, 1_000_001))
+                .addInterval(new SimpleInterval("3", 1_000_003, 1_000_100))
+                .addInterval(new SimpleInterval("20", 1_000_000, 1_100_000));
         runCommandLine(args);
 
 
+        final ArgumentsBuilder args2 = new ArgumentsBuilder();
+        final File out2 = createTempFile("out", ".bam");
+        args2.addArgument("I", "gs://hellbender/test/resources/benchmark/CEUTrio.HiSeq.WEx.b37.NA12892.bam")
+                .addArgument("read-index", "gs://hellbender/test/resources/benchmark/CEUTrio.HiSeq.WEx.b37.NA12892.bam.bai")
+                .addOutput(out2)
+                .addInterval(new SimpleInterval("3",1_000_000, 1_000_001))
+                .addInterval(new SimpleInterval("3", 1_000_003, 1_000_100))
+                .addInterval(new SimpleInterval("20", 1_000_000, 1_100_000));
+        runCommandLine(args2);
+
+    SamAssertionUtils.assertEqualBamFiles(out, out2, false, ValidationStringency.DEFAULT_STRINGENCY);
     }
 }
