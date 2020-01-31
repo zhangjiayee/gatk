@@ -3,7 +3,9 @@ package org.broadinstitute.hellbender.tools;
 import htsjdk.samtools.SamReaderFactory;
 import org.broadinstitute.hellbender.GATKBaseTest;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
+import org.broadinstitute.hellbender.testutils.ArgumentsBuilder;
 import org.broadinstitute.hellbender.testutils.SamAssertionUtils;
+import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
@@ -38,5 +40,16 @@ public final class PrintReadsIntegrationTest extends AbstractPrintReadsIntegrati
         //output has both GATK PrintReads and GATK PrintReads.1 in headers
         Assert.assertNotNull(SamReaderFactory.makeDefault().open(outFile).getFileHeader().getProgramRecord("GATK PrintReads"));
         Assert.assertNotNull(SamReaderFactory.makeDefault().open(outFile).getFileHeader().getProgramRecord("GATK PrintReads.1"));
+    }
+
+    @Test
+    public void testHTTP(){
+        ArgumentsBuilder args = new ArgumentsBuilder();
+                args.addArgument("I", "https://storage.googleapis.com/hellbender/test/resources/benchmark/CEUTrio.HiSeq.WEx.b37.NA12892.bam")
+                        .addArgument("read-index", "https://storage.googleapis.com/hellbender/test/resources/benchmark/CEUTrio.HiSeq.WEx.b37.NA12892.bam.bai")
+                        .addOutput(createTempFile("out", ".bam"))
+                        .addInterval(new SimpleInterval("3",1_000_000, 1_000_001));
+
+        runCommandLine(args);
     }
 }
