@@ -12,6 +12,8 @@ import org.broadinstitute.hellbender.cmdline.programgroups.LongReadAnalysisProgr
 import org.broadinstitute.hellbender.engine.filters.ReadFilter;
 import org.broadinstitute.hellbender.engine.filters.ReadFilterLibrary;
 import org.broadinstitute.hellbender.engine.spark.GATKSparkTool;
+import org.broadinstitute.hellbender.exceptions.GATKException;
+import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.io.IOUtils;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.hellbender.utils.read.ReadUtils;
@@ -79,6 +81,11 @@ public class SplitLongReadAssemblyBAMByContigSpark extends GATKSparkTool {
             final String readName = pair._1();
             final Iterable<GATKRead> gatkReads = pair._2();
             final String output = outputDir + (outputDir.endsWith("/") ? "" : "/") + readName + ".bam";
+            Utils.stream( gatkReads )
+                    .filter(read -> !read.isSecondaryAlignment())
+                    .filter(read -> !read.isSupplementaryAlignment())
+                    .findFirst()
+                    .orElseThrow(() -> new GATKException("no primary alignment for read " + readName));
             try (final SAMFileGATKReadWriter outputWriter = new SAMFileGATKReadWriter(
                     ReadUtils.createCommonSAMWriter(
                             IOUtils.getPath(output),
