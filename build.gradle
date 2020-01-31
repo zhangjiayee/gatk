@@ -347,7 +347,7 @@ dependencies {
     compile 'org.broadinstitute:gatk-bwamem-jni:1.0.4'
     compile 'org.broadinstitute:gatk-fermilite-jni:1.2.0'
 
-    compile 'org.magicdgs:jsr203-http:v0.1.0-3-gb98c787'
+    compile 'org.magicdgs:jsr203-http:v0.1.0-4-g3104710-SNAPSHOT'
 
     // Required for COSMIC Funcotator data source:
     compile 'org.xerial:sqlite-jdbc:3.20.1'
