@@ -45,11 +45,16 @@ public final class PrintReadsIntegrationTest extends AbstractPrintReadsIntegrati
     @Test
     public void testHTTP(){
         ArgumentsBuilder args = new ArgumentsBuilder();
-                args.addArgument("I", "https://storage.googleapis.com/hellbender/test/resources/benchmark/CEUTrio.HiSeq.WEx.b37.NA12892.bam")
+        File out = createTempFile("out", ".bam");
+        args.addArgument("I", "https://storage.googleapis.com/hellbender/test/resources/benchmark/CEUTrio.HiSeq.WEx.b37.NA12892.bam")
                         .addArgument("read-index", "https://storage.googleapis.com/hellbender/test/resources/benchmark/CEUTrio.HiSeq.WEx.b37.NA12892.bam.bai")
-                        .addOutput(createTempFile("out", ".bam"))
-                        .addInterval(new SimpleInterval("3",1_000_000, 1_000_001));
+                        .addOutput(out)
+                        .addInterval(new SimpleInterval("3",1_000_000, 1_000_001))
+                        .addInterval(new SimpleInterval("3", 1_000_003, 1_000_100))
+                        .addInterval(new SimpleInterval("20", 1_000_000, 1_100_000));
 
         runCommandLine(args);
+
+
     }
 }
