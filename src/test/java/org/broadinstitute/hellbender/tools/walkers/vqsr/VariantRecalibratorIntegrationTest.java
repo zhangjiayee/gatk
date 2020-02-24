@@ -45,6 +45,23 @@ public class VariantRecalibratorIntegrationTest extends CommandLineProgramTest {
             "--" + StandardArgumentDefinitions.ADD_OUTPUT_VCF_COMMANDLINE, "false"
         };
 
+    private final String[] VQSRSNPsWithAnnotationDupe =
+            new String[] {
+                    "--variant",
+                    getLargeVQSRTestDataDir() + "phase1.projectConsensus.chr20.1M-10M.raw.snps.vcf",
+                    "-L","20:1,000,000-10,000,000",
+                    "--resource:known,known=true,prior=10.0",
+                    getLargeVQSRTestDataDir() + "dbsnp_132_b37.leftAligned.20.1M-10M.vcf",
+                    "--resource:truth_training1,truth=true,training=true,prior=15.0",
+                    getLargeVQSRTestDataDir() + "sites_r27_nr.b37_fwd.20.1M-10M.vcf",
+                    "--resource:truth_training2,training=true,truth=true,prior=12.0",
+                    getLargeVQSRTestDataDir() + "Omni25_sites_1525_samples.b37.20.1M-10M.vcf",
+                    "-an", "QD", "-an", "HaplotypeScore", "-an", "HRun", "-an", "HRun",
+                    "--trust-all-polymorphic", // for speed
+                    "-mode", "SNP",
+                    "--" + StandardArgumentDefinitions.ADD_OUTPUT_VCF_COMMANDLINE, "false"
+            };
+
     private final String[] VQSRBothParamsWithResources =
             new String[] {
                     "--variant",
@@ -149,8 +166,12 @@ public class VariantRecalibratorIntegrationTest extends CommandLineProgramTest {
     @DataProvider(name="VarRecalSNP")
     public Object[][] getVarRecalSNPData() {
         return new Object[][] {
-            {
-                    VQSRBothParamsWithResources,
+                {VQSRSNPsWithAnnotationDupe,
+                        getLargeVQSRTestDataDir() + "expected/SNPDefaultTranches.txt",
+                        getLargeVQSRTestDataDir() + "snpRecal.vcf"
+                },
+                {
+                    VQSRSNPParamsWithResources,
                 getLargeVQSRTestDataDir() + "expected/SNPDefaultTranches.txt",
                 getLargeVQSRTestDataDir() + "snpRecal.vcf"
             },
@@ -159,6 +180,13 @@ public class VariantRecalibratorIntegrationTest extends CommandLineProgramTest {
                 getToolTestDataDir() + "expected.AS.tranches",
                 getLargeVQSRTestDataDir() + "expected/expected.AS.recal.vcf"
             }
+
+        };
+    }
+
+    @DataProvider(name="BadVarRecal")
+    public Object[][] BadVarRecal() {
+        return new Object[][] {
 
         };
     }
@@ -225,6 +253,11 @@ public class VariantRecalibratorIntegrationTest extends CommandLineProgramTest {
 
     @Test(dataProvider = "VarRecalSNP")
     public void testVariantRecalibratorSNP(final String[] params, final String tranchesPath, final String recalPath) throws IOException {
+        doSNPTest(params, tranchesPath, recalPath);
+    }
+
+    @Test(dataProvider = "BadVarRecal", expectedExceptions = {UserException.BadInput.class})
+    public void testBadVarRecalCommand(final String[] params, final String tranchesPath, final String recalPath) throws IOException {
         doSNPTest(params, tranchesPath, recalPath);
     }
 
