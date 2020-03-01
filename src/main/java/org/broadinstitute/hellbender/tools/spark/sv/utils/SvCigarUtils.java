@@ -67,32 +67,12 @@ public final class SvCigarUtils {
     }
 
     /**
-     * @return the number of hard clipped bases as indicated in the input {@code cigarElements}, either from the beginning
-     * of the list ({@code fromStart==true}) or from the end of the list ({@code fromStart==false}).
-     *
-     * @throws IllegalArgumentException if fails check by {@link #validateCigar(List)}
-     */
-    @VisibleForTesting
-    public static int getNumHardClippingBases(final boolean fromStart, final List<CigarElement> cigarElements) {
-
-        validateCigar(cigarElements);
-
-        // "H can only be present as the first and/or last operation" according to VCF spec 4.2
-        final int index = fromStart ? 0 : cigarElements.size()-1;
-        final CigarElement firstElement = cigarElements.get(index);
-        return firstElement.getOperator()== CigarOperator.H ? firstElement.getLength() : 0;
-    }
-
-    /**
      * @return the number of soft clipped bases as indicated in the input {@code cigarElements}, either from the beginning
      * of the list ({@code fromStart==true}) or from the end of the list ({@code fromStart==false}).
-     *
-     * @throws IllegalArgumentException if fails check by {@link #validateCigar(List)}
-     */
+     **/
     @VisibleForTesting
     public static int getNumSoftClippingBases(final boolean fromStart, final List<CigarElement> cigarElements) {
 
-        validateCigar(cigarElements);
 
         // because 'H' can only be the 1st/last operation according to the spec, and also
         // "S may only have H operations between them and the ends of the CIGAR string",
@@ -114,59 +94,6 @@ public final class SvCigarUtils {
     }
 
     /**
-     * Checks input list of cigar operations for:
-     * <ul>
-     *     <li>empty input list;</li>
-     *     <li>there must be at least one alignment operation in the list;</li>
-     *     <li>deletion operation cannot neighbor clipping operations;</li>
-     * </ul>
-     */
-    @VisibleForTesting
-    public static void validateCigar(final List<CigarElement> cigarElements) {
-        Utils.validateArg(!cigarElements.isEmpty(), "Cannot parse empty list cigarElements");
-        Utils.validateArg(cigarElements.stream().anyMatch(ele -> ele.getOperator().isAlignment()),
-                "No alignment found in the input list of cigar operations: " + cigarElements.toString());
-
-        int idx = findIndexOfFirstNonClippingOperation(cigarElements, true);
-        Utils.validateArg(idx==0 || cigarElements.get(idx).getOperator()!=CigarOperator.D,
-                "Unexpected CIGAR format with deletion neighboring clipping; cigar elements are: " + cigarElements.toString());
-        idx = findIndexOfFirstNonClippingOperation(cigarElements, false);
-        Utils.validateArg(idx==cigarElements.size()-1 || cigarElements.get(idx).getOperator()!=CigarOperator.D,
-                "Unexpected CIGAR format with deletion neighboring clipping; cigar elements are: " + cigarElements.toString());
-    }
-
-    /**
-     * Returns the index of the first non-clipping operation into the input {@code cigarElements}.
-     * @param cigarElements          input list of operations to be scanned through
-     * @param fromStartInsteadOfEnd  either from the start of the list or from the end of the list
-     */
-    @VisibleForTesting
-    public static int findIndexOfFirstNonClippingOperation(final List<CigarElement> cigarElements, final boolean fromStartInsteadOfEnd) {
-        int idx = 0;
-        final int step;
-        if (fromStartInsteadOfEnd) {
-            step = 1;
-        } else {
-            idx = cigarElements.size()-1;
-            step = -1;
-        }
-        while(cigarElements.get(idx).getOperator().isClipping()){
-            idx += step;
-        }
-        return idx;
-    }
-
-    @VisibleForTesting
-    public static int getUnclippedReadLength(final Cigar cigar) {
-        validateCigar(cigar.getCigarElements());
-        return cigar.getCigarElements().stream()
-                .mapToInt(element ->
-                        element.getOperator().isClipping() || element.getOperator().consumesReadBases() ? element.getLength() : 0
-                )
-                .sum();
-    }
-
-    /**
      * Checks the input CIGAR for assumption that operator 'D' is not immediately adjacent to clipping operators.
      * Then convert the 'I' CigarElement, if it is at either end (terminal) of the input cigar, to a corresponding 'S' operator.
      * Note that we allow CIGAR of the format '10H10S10I10M', but disallows the format if after the conversion the cigar turns into a giant clip,
@@ -183,63 +110,9 @@ public final class SvCigarUtils {
         if (cigar.numCigarElements()<2 ) return cigar.getCigarElements();
 
         final List<CigarElement> cigarElements = new ArrayList<>(cigar.getCigarElements());
-        validateCigar(cigarElements);
 
         final List<CigarElement> convertedList = convertInsToSoftClipFromOneEnd(cigarElements, true);
         return convertInsToSoftClipFromOneEnd(convertedList, false);
-    }
-
-    /**
-     * Actually convert terminal 'I' to 'S' and in case there's an 'S' comes before 'I', compactify the two neighboring 'S' operations into one.
-     *
-     * @return the converted and compactified list of cigar elements
-     */
-    @VisibleForTesting
-    public static List<CigarElement> convertInsToSoftClipFromOneEnd(final List<CigarElement> cigarElements,
-                                                                    final boolean fromStart) {
-        final int numHardClippingBasesFromOneEnd = getNumHardClippingBases(fromStart, cigarElements);
-        final int numSoftClippingBasesFromOneEnd = getNumSoftClippingBases(fromStart, cigarElements);
-
-        final int indexOfFirstNonClippingOperation;
-        if (numHardClippingBasesFromOneEnd==0 && numSoftClippingBasesFromOneEnd==0) { // no clipping
-            indexOfFirstNonClippingOperation = fromStart ? 0 : cigarElements.size()-1;
-        } else if (numHardClippingBasesFromOneEnd==0 || numSoftClippingBasesFromOneEnd==0) { // one clipping
-            indexOfFirstNonClippingOperation = fromStart ? 1 : cigarElements.size()-2;
-        } else {
-            indexOfFirstNonClippingOperation = fromStart ? 2 : cigarElements.size()-3;
-        }
-
-        final CigarElement element = cigarElements.get(indexOfFirstNonClippingOperation);
-        if (element.getOperator() == CigarOperator.I) {
-
-            cigarElements.set(indexOfFirstNonClippingOperation, new CigarElement(element.getLength(), CigarOperator.S));
-
-            return compactifyNeighboringSoftClippings(cigarElements);
-        } else {
-            return cigarElements;
-        }
-    }
-
-    /**
-     * Compactify two neighboring soft clippings, one of which was converted from an insertion operation.
-     * @return the compactified list of operations
-     * @throws IllegalArgumentException if there's un-handled edge case where two operations neighboring each other have
-     *                                  the same operator (other than 'S') but for some reason was not compactified into one
-     */
-    @VisibleForTesting
-    public static List<CigarElement> compactifyNeighboringSoftClippings(final List<CigarElement> cigarElements) {
-        final List<CigarElement> result = new ArrayList<>(cigarElements.size());
-        for (final CigarElement element : cigarElements) {
-            final int idx = result.size()-1;
-            if (result.isEmpty() || result.get(idx).getOperator()!=element.getOperator()) {
-                result.add(element);
-            } else {
-                Utils.validateArg(result.get(idx).getOperator()==CigarOperator.S && element.getOperator()==CigarOperator.S,
-                        "Seeing new edge case where two neighboring operations are having the same operator: " + cigarElements.toString());
-                result.set(idx, new CigarElement(result.get(idx).getLength()+element.getLength(), CigarOperator.S));
-            }
-        }
-        return result;
     }
 
     /**
@@ -327,7 +200,7 @@ public final class SvCigarUtils {
         final List<CigarElement> cigarElementsInOrderOfWalkingDir = (walkBackward ? CigarUtils.invertCigar(cigarAlong5To3DirOfRead): cigarAlong5To3DirOfRead).getCigarElements();
         Utils.validateArg(cigarElementsInOrderOfWalkingDir.stream().noneMatch(ce -> ce.getOperator().isPadding() || ce.getOperator().equals(CigarOperator.N)),
                 "cigar contains padding, which is currently unsupported; cigar: " + TextCigarCodec.encode(cigarAlong5To3DirOfRead));
-        final int readUnclippedLength = getUnclippedReadLength(cigarAlong5To3DirOfRead);
+        final int readUnclippedLength = CigarUtils.countUnclippedReadBases(cigarAlong5To3DirOfRead);
         Utils.validateArg(readUnclippedLength >= startInclusiveOnRead,
                 "given start location on read (" + startInclusiveOnRead + ") is higher than read unclipped length (" + readUnclippedLength+ "), cigar: " + TextCigarCodec.encode(cigarAlong5To3DirOfRead));
         final int totalRefLen = cigarElementsInOrderOfWalkingDir.stream().mapToInt(ce -> ce.getOperator().consumesReferenceBases() ? ce.getLength() : 0).sum();

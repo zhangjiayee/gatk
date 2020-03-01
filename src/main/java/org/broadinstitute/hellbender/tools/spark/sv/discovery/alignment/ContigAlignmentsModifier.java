@@ -9,6 +9,7 @@ import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SvCigarUtils;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.Utils;
+import org.broadinstitute.hellbender.utils.read.CigarBuilder;
 import org.broadinstitute.hellbender.utils.read.CigarUtils;
 import scala.Tuple2;
 import scala.Tuple3;
@@ -62,7 +63,7 @@ public final class ContigAlignmentsModifier {
         if (clipFrom3PrimeEnd) {
             newTigStart = originalContigStart;
             newTigEnd   = Math.min(originalContigEnd - clipLengthOnRead,
-                                   SvCigarUtils.getUnclippedReadLength(newCigarAlong5to3DirectionOfContig) -
+                    CigarUtils.countUnclippedReadBases(newCigarAlong5to3DirectionOfContig) -
                                            CigarUtils.countRightClippedBases(newCigarAlong5to3DirectionOfContig));
         } else {
             newTigStart = Math.max(originalContigStart + clipLengthOnRead,
@@ -167,11 +168,10 @@ public final class ContigAlignmentsModifier {
         }
 
         if (clipFrom3PrimeEnd) Collections.reverse(newMiddleSection);
-        final Cigar newCigar = constructNewCigar(leftClippings, newMiddleSection, rightClippings);
+        final Cigar newCigar = new CigarBuilder().addAll(leftClippings).addAll(newMiddleSection).addAll(rightClippings).make();
         if (newCigar.getCigarElements().isEmpty()) {
             throw new GATKException("Logic error: new cigar after the clipping is empty, with:\n" + messageWhenErred);
         }
-        SvCigarUtils.validateCigar(newCigar.getCigarElements());
 
         final SimpleInterval newRefSpan;
         if (clipFrom3PrimeEnd == input.forwardStrand) {
@@ -220,13 +220,6 @@ public final class ContigAlignmentsModifier {
             throw new GATKException("Logic error: cigar elements corresponding to alignment block is empty. " + input.toPackedString());
 
         return new Tuple3<>(left, middle, right);
-    }
-
-    private static Cigar constructNewCigar(final List<CigarElement> left, final List<CigarElement> middle, final List<CigarElement> right) {
-        final Cigar cigar = new Cigar(left);
-        middle.forEach(cigar::add);
-        right.forEach(cigar::add);
-        return new Cigar(SvCigarUtils.compactifyNeighboringSoftClippings(cigar.getCigarElements()));
     }
 
     public enum AlnModType {

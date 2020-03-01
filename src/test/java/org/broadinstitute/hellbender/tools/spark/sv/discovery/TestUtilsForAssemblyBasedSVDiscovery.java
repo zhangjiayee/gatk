@@ -91,7 +91,7 @@ public final class TestUtilsForAssemblyBasedSVDiscovery {
         final SimpleInterval refSpan = new SimpleInterval(chr, start, start - 1 + cigar.getReferenceLength());
         return new AlignmentInterval(refSpan,
                 SvCigarUtils.getNumClippedBases(true, readCigar) + 1,
-                SvCigarUtils.getUnclippedReadLength(readCigar) - SvCigarUtils.getNumClippedBases(false, readCigar),
+                CigarUtils.countUnclippedReadBases(readCigar) - SvCigarUtils.getNumClippedBases(false, readCigar),
                 readCigar,
                 forwardStrand,
                 mapQual, numMismatch, alignerScore,

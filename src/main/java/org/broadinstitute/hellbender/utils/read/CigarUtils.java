@@ -285,6 +285,28 @@ public final class CigarUtils {
     }
 
     /**
+     * Returns the number of based soft-clipped to the left/head of the cigar.
+     *
+     * @param cigar the input cigar.
+     * @throws IllegalArgumentException if {@code cigar} is {@code null}.
+     * @return 0 or greater.
+     */
+    public static int countLeftSoftClippedBases(final Cigar cigar) {
+        return countClippedBases(cigar, ClippingTail.LEFT_TAIL, true, false);
+    }
+
+    /**
+     * Returns the number of based soft-clipped to the right/tail of the cigar.
+     *
+     * @param cigar the input cigar.
+     * @throws IllegalArgumentException if {@code cigar} is {@code null}.
+     * @return 0 or greater.
+     */
+    public static int countRightSoftClippedBases(final Cigar cigar) {
+        return countClippedBases(cigar, ClippingTail.RIGHT_TAIL, true, false);
+    }
+
+    /**
      * Returns the number of based hard-clipped to the left/head of the cigar.
      *
      * @param cigar the input cigar.

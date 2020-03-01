@@ -13,6 +13,7 @@ import org.broadinstitute.hellbender.tools.spark.sv.discovery.SvDiscoverFromLoca
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVUtils;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SvCigarUtils;
 import org.broadinstitute.hellbender.utils.Utils;
+import org.broadinstitute.hellbender.utils.read.CigarUtils;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 import scala.Tuple2;
 
@@ -663,7 +664,7 @@ public class AssemblyContigAlignmentsConfigPicker {
                             final Iterable<AlignmentInterval> split;
                             if (alignment.containsGapOfEqualOrLargerSize(GAPPED_ALIGNMENT_BREAK_DEFAULT_SENSITIVITY)) {
                                 split = ContigAlignmentsModifier.splitGappedAlignment(alignment, GAPPED_ALIGNMENT_BREAK_DEFAULT_SENSITIVITY,
-                                        SvCigarUtils.getUnclippedReadLength(alignment.cigarAlong5to3DirectionOfContig));
+                                        CigarUtils.countUnclippedReadBases(alignment.cigarAlong5to3DirectionOfContig));
                             } else {
                                 split = Collections.singletonList(alignment);
                             }
@@ -718,7 +719,7 @@ public class AssemblyContigAlignmentsConfigPicker {
         originalGoodMappings.forEach(alignment -> {
             if (alignment.containsGapOfEqualOrLargerSize(GAPPED_ALIGNMENT_BREAK_DEFAULT_SENSITIVITY)) {
                 ContigAlignmentsModifier.splitGappedAlignment(alignment, GAPPED_ALIGNMENT_BREAK_DEFAULT_SENSITIVITY,
-                        SvCigarUtils.getUnclippedReadLength(alignment.cigarAlong5to3DirectionOfContig))
+                        CigarUtils.countUnclippedReadBases(alignment.cigarAlong5to3DirectionOfContig))
                         .forEach(gapSplit::add);
             } else {
                 gapSplit.add(alignment);
