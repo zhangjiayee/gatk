@@ -11,6 +11,7 @@ import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.read.CigarBuilder;
 import org.broadinstitute.hellbender.utils.read.CigarUtils;
+import org.broadinstitute.hellbender.utils.read.ClippingTail;
 import scala.Tuple2;
 import scala.Tuple3;
 
@@ -64,10 +65,10 @@ public final class ContigAlignmentsModifier {
             newTigStart = originalContigStart;
             newTigEnd   = Math.min(originalContigEnd - clipLengthOnRead,
                     CigarUtils.countUnclippedReadBases(newCigarAlong5to3DirectionOfContig) -
-                                           CigarUtils.countRightClippedBases(newCigarAlong5to3DirectionOfContig));
+                                           CigarUtils.countClippedBases(newCigarAlong5to3DirectionOfContig, ClippingTail.RIGHT_TAIL));
         } else {
             newTigStart = Math.max(originalContigStart + clipLengthOnRead,
-                                   CigarUtils.countLeftClippedBases(newCigarAlong5to3DirectionOfContig) + 1);
+                                   CigarUtils.countClippedBases(newCigarAlong5to3DirectionOfContig, ClippingTail.LEFT_TAIL) + 1);
             newTigEnd   = originalContigEnd;
         }
 
@@ -278,23 +279,23 @@ public final class ContigAlignmentsModifier {
                                                                    final int sensitivity,
                                                                    final int unclippedContigLen) {
 
-        final List<CigarElement> cigarElements = SvCigarUtils.checkCigarAndConvertTerminalInsertionToSoftClip(oneRegion.cigarAlong5to3DirectionOfContig);
-        if (cigarElements.size() == 1) return new ArrayList<>( Collections.singletonList(oneRegion) );
+        final Cigar cigar = SvCigarUtils.checkCigarAndConvertTerminalInsertionToSoftClip(oneRegion.cigarAlong5to3DirectionOfContig);
+        if (cigar.numCigarElements() == 1) return new ArrayList<>( Collections.singletonList(oneRegion) );
 
         final List<AlignmentInterval> result = new ArrayList<>(3); // blunt guess
         final int originalMapQ = oneRegion.mapQual;
 
         final List<CigarElement> cigarMemoryList = new ArrayList<>();
-        final int clippedNBasesFromStart = SvCigarUtils.getNumClippedBases(true, cigarElements);
+        final int clippedNBasesFromStart = CigarUtils.countClippedBases(cigar, ClippingTail.LEFT_TAIL);
 
-        final int hardClippingAtBeginning = cigarElements.get(0).getOperator() == CigarOperator.H ? cigarElements.get(0).getLength() : 0;
-        final int hardClippingAtEnd = (cigarElements.get(cigarElements.size()-1).getOperator() == CigarOperator.H) ? cigarElements.get(cigarElements.size()-1).getLength() : 0;
+        final int hardClippingAtBeginning = cigar.getFirstCigarElement().getOperator() == CigarOperator.H ? cigar.getFirstCigarElement().getLength() : 0;
+        final int hardClippingAtEnd = (cigar.getLastCigarElement().getOperator() == CigarOperator.H) ? cigar.getLastCigarElement().getLength() : 0;
         final CigarElement hardClippingAtBeginningMaybeNull = hardClippingAtBeginning==0 ? null : new CigarElement(hardClippingAtBeginning, CigarOperator.H);
         int contigIntervalStart = 1 + clippedNBasesFromStart;
         // we are walking along the contig following the cigar, which indicates that we might be walking backwards on the reference if oneRegion.forwardStrand==false
         int refBoundary1stInTheDirectionOfContig = oneRegion.forwardStrand ? oneRegion.referenceSpan.getStart()
                 : oneRegion.referenceSpan.getEnd();
-        for (final CigarElement cigarElement : cigarElements) {
+        for (final CigarElement cigarElement : cigar) {
             final CigarOperator op = cigarElement.getOperator();
             final int operatorLen = cigarElement.getLength();
             switch (op) {
@@ -310,8 +311,8 @@ public final class ContigAlignmentsModifier {
                     // collapse cigar memory list into a single cigar for ref & contig interval computation
                     final Cigar memoryCigar = new Cigar(cigarMemoryList);
                     final int effectiveReadLen = memoryCigar.getReadLength()
-                            + SvCigarUtils.getTotalHardClipping(memoryCigar)
-                            - SvCigarUtils.getNumClippedBases(true, memoryCigar);
+                            + CigarUtils.countClippedBases(memoryCigar, CigarOperator.HARD_CLIP)
+                            - CigarUtils.countClippedBases(memoryCigar, ClippingTail.LEFT_TAIL);
 
                     // task 1: infer reference interval taking into account of strand
                     final SimpleInterval referenceInterval;
@@ -376,7 +377,7 @@ public final class ContigAlignmentsModifier {
         }
 
         final Cigar lastForwardStrandCigar = new Cigar(cigarMemoryList);
-        int clippedNBasesFromEnd = SvCigarUtils.getNumClippedBases(false, cigarElements);
+        int clippedNBasesFromEnd = CigarUtils.countClippedBases(cigar, ClippingTail.RIGHT_TAIL);
         result.add(new AlignmentInterval(lastReferenceInterval,
                 contigIntervalStart, unclippedContigLen-clippedNBasesFromEnd, lastForwardStrandCigar,
                 oneRegion.forwardStrand, originalMapQ,

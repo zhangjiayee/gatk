@@ -255,7 +255,7 @@ public final class CigarUtilsUnitTest {
 
     @Test(dataProvider = "randomValidCigars")
     public void testLeftClip(final Cigar cigar) {
-        final int actual = CigarUtils.countLeftClippedBases(cigar);
+        final int actual = CigarUtils.countClippedBases(cigar, ClippingTail.LEFT_TAIL);
         int expected = 0;
         for (final CigarElement element : cigar.getCigarElements()) {
             if (!element.getOperator().isClipping()) {
@@ -268,7 +268,7 @@ public final class CigarUtilsUnitTest {
 
     @Test(dataProvider = "allClipFunkyCigars", expectedExceptions = IllegalArgumentException.class)
     public void testLeftClipFunkly(final Cigar cigar) {
-        CigarUtils.countLeftClippedBases(cigar);
+        CigarUtils.countClippedBases(cigar, ClippingTail.LEFT_TAIL);
     }
 
     @Test
@@ -282,13 +282,13 @@ public final class CigarUtilsUnitTest {
                 .map(ss -> new ImmutablePair<>(TextCigarCodec.decode(ss[0]), Integer.parseInt(ss[1]) ))
                 .collect(Collectors.toList());
         for (final Pair<Cigar, Integer> test : tests) {
-            Assert.assertEquals(CigarUtils.countLeftClippedBases(test.getLeft()), test.getRight().intValue(), "" + test.getLeft());
+            Assert.assertEquals(CigarUtils.countClippedBases(test.getLeft(), ClippingTail.LEFT_TAIL), test.getRight().intValue(), "" + test.getLeft());
         }
     }
 
     @Test(dataProvider = "randomValidCigars")
     public void testLeftHardClip(final Cigar cigar) {
-        final int actual = CigarUtils.countLeftHardClippedBases(cigar);
+        final int actual = CigarUtils.countClippedBases(cigar, ClippingTail.LEFT_TAIL, CigarOperator.HARD_CLIP);
         int expected = 0;
         for (final CigarElement element : cigar.getCigarElements()) {
             if (element.getOperator() != CigarOperator.H) {
@@ -310,13 +310,13 @@ public final class CigarUtilsUnitTest {
                 .map(ss -> new ImmutablePair<>(TextCigarCodec.decode(ss[0]), Integer.parseInt(ss[1]) ))
                 .collect(Collectors.toList());
         for (final Pair<Cigar, Integer> test : tests) {
-            Assert.assertEquals(CigarUtils.countLeftHardClippedBases(test.getLeft()), test.getRight().intValue(), "" + test.getLeft());
+            Assert.assertEquals(CigarUtils.countClippedBases(test.getLeft(), ClippingTail.LEFT_TAIL, CigarOperator.HARD_CLIP), test.getRight().intValue(), "" + test.getLeft());
         }
     }
 
     @Test(dataProvider = "randomValidCigars")
     public void testRightClip(final Cigar cigar) {
-        final int actual = CigarUtils.countRightClippedBases(cigar);
+        final int actual = CigarUtils.countClippedBases(cigar, ClippingTail.RIGHT_TAIL);
         int expected = 0;
         boolean nonClippingFound = false;
         for (final CigarElement element : CigarUtils.invertCigar(cigar).getCigarElements()) {
@@ -331,12 +331,12 @@ public final class CigarUtilsUnitTest {
 
     @Test(dataProvider = "allClipFunkyCigars", expectedExceptions = IllegalArgumentException.class)
     public void testRightClipFunkly(final Cigar cigar) {
-        CigarUtils.countRightClippedBases(cigar);
+        CigarUtils.countClippedBases(cigar, ClippingTail.RIGHT_TAIL);
     }
 
     @Test(dataProvider = "randomValidCigars")
     public void testRightHardClip(final Cigar cigar) {
-        final int actual = CigarUtils.countRightHardClippedBases(cigar);
+        final int actual = CigarUtils.countClippedBases(cigar, ClippingTail.RIGHT_TAIL, CigarOperator.HARD_CLIP);
         int expected = 0;
         for (final CigarElement element : CigarUtils.invertCigar(cigar).getCigarElements()) {
             if (element.getOperator() != CigarOperator.H) {
@@ -358,7 +358,7 @@ public final class CigarUtilsUnitTest {
                 .map(ss -> new ImmutablePair<>(TextCigarCodec.decode(ss[0]), Integer.parseInt(ss[1]) ))
                 .collect(Collectors.toList());
         for (final Pair<Cigar, Integer> test : tests) {
-            Assert.assertEquals(CigarUtils.countRightHardClippedBases(test.getLeft()), test.getRight().intValue(), "" + test.getLeft());
+            Assert.assertEquals(CigarUtils.countClippedBases(test.getLeft(), ClippingTail.RIGHT_TAIL, CigarOperator.HARD_CLIP), test.getRight().intValue(), "" + test.getLeft());
         }
     }
 

@@ -16,41 +16,6 @@ import java.util.stream.Stream;
 
 public class SvCigarUtilsUnitTest extends GATKBaseTest {
 
-    @Test(groups = "sv")
-    public void testClippingArithmetic() {
-        Cigar cigar = TextCigarCodec.decode("100M51S");
-        Assert.assertEquals(SvCigarUtils.getTotalHardClipping(cigar), 0);
-        Assert.assertEquals(SvCigarUtils.getNumClippedBases(true, cigar), 0);
-        Assert.assertEquals(SvCigarUtils.getNumClippedBases(false, cigar), 51);
-
-        cigar = TextCigarCodec.decode("51S100M");
-        Assert.assertEquals(SvCigarUtils.getTotalHardClipping(cigar), 0);
-        Assert.assertEquals(SvCigarUtils.getNumClippedBases(true, cigar), 51);
-        Assert.assertEquals(SvCigarUtils.getNumClippedBases(false, cigar), 0);
-
-        cigar = TextCigarCodec.decode("100M51H");
-        Assert.assertEquals(SvCigarUtils.getTotalHardClipping(cigar), 51);
-        Assert.assertEquals(SvCigarUtils.getNumClippedBases(true, cigar), 0);
-        Assert.assertEquals(SvCigarUtils.getNumClippedBases(false, cigar), 51);
-
-        cigar = TextCigarCodec.decode("51H100M");
-        Assert.assertEquals(SvCigarUtils.getTotalHardClipping(cigar), 51);
-        Assert.assertEquals(SvCigarUtils.getNumClippedBases(true, cigar), 51);
-        Assert.assertEquals(SvCigarUtils.getNumClippedBases(false, cigar), 0);
-
-        cigar = TextCigarCodec.decode("12H12S101M13S13H");
-        Assert.assertEquals(SvCigarUtils.getTotalHardClipping(cigar), 25);
-        Assert.assertEquals(SvCigarUtils.getNumClippedBases(true, cigar), 24);
-        Assert.assertEquals(SvCigarUtils.getNumClippedBases(false, cigar), 26);
-    }
-
-    @Test(groups = "sv")
-    public void testGetNumClippingBases_hardAndSoftSeparately() {
-        List<CigarElement> cigarElements = TextCigarCodec.decode("10H20S30M40D50M60S70H").getCigarElements();
-        Assert.assertEquals(SvCigarUtils.getNumSoftClippingBases(true, cigarElements), 20);
-        Assert.assertEquals(SvCigarUtils.getNumSoftClippingBases(false, cigarElements), 60);
-    }
-
     @DataProvider(name = "refWalkDistanceTestDataException")
     private Object[][] createRefWalkDistanceTestDataException() {
         final List<Object[]> data = new ArrayList<>(20);

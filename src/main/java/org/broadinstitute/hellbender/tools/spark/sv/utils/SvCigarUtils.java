@@ -17,83 +17,6 @@ import java.util.List;
 public final class SvCigarUtils {
 
     /**
-     * @return the total number of hard clipped bases represented in the CIGAR.
-     */
-    @VisibleForTesting
-    public static int getTotalHardClipping(final Cigar cigar) {
-        final List<CigarElement> cigarElements = cigar.getCigarElements();
-        final int sz = cigarElements.size();
-        if (sz <2) { // no cigar elements or only 1 element means there cannot be any hard clipping
-            return 0;
-        }
-        return (cigarElements.get(0).getOperator() == CigarOperator.HARD_CLIP ? cigarElements.get(0).getLength() : 0) +
-                (cigarElements.get(sz - 1).getOperator() == CigarOperator.HARD_CLIP ? cigarElements.get(sz - 1).getLength() : 0);
-    }
-
-    /**
-     * Returns the number of clipped bases, including both soft and hard, represented in {@code cigarAlong5to3DirectionOfContig}
-     * from the start or from the end
-     * @param fromStart from the start of the template or not
-     * @param cigar     the {@link Cigar} to be inspected
-     */
-    @VisibleForTesting
-    public static int getNumClippedBases(final boolean fromStart, final Cigar cigar) {
-        return getNumClippedBases(fromStart, cigar.getCigarElements());
-    }
-
-    /**
-     * Returns the number of clipped bases, including both soft and hard, represented in {@code cigarElements}
-     * from the start or from the end
-     * @param fromStart     from the start of the template or not
-     * @param cigarElements the ordered {@link CigarElement}'s of a cigar
-     */
-    @VisibleForTesting
-    public static int getNumClippedBases(final boolean fromStart, final List<CigarElement> cigarElements) {
-
-        final int sz = cigarElements.size();
-        if(sz==1) return 0; // cannot be a giant clip
-
-        final int step = fromStart ? 1 : -1;
-        int result = 0;
-        int j = fromStart ? 0 : sz - 1;
-        CigarElement ce = cigarElements.get(j);
-        while (ce.getOperator().isClipping()) {
-            result += ce.getLength();
-            j += step;
-            if ( j < 0 || j >= sz ) break;
-            ce = cigarElements.get(j);
-        }
-        return result;
-    }
-
-    /**
-     * @return the number of soft clipped bases as indicated in the input {@code cigarElements}, either from the beginning
-     * of the list ({@code fromStart==true}) or from the end of the list ({@code fromStart==false}).
-     **/
-    @VisibleForTesting
-    public static int getNumSoftClippingBases(final boolean fromStart, final List<CigarElement> cigarElements) {
-
-
-        // because 'H' can only be the 1st/last operation according to the spec, and also
-        // "S may only have H operations between them and the ends of the CIGAR string",
-        // 'S' could only be the 1st operation or the 2nd operation next to the 'H' sitting at the end
-        // no two 'S' operations should sit next to each other
-
-        final int endIndex = fromStart ? 0 : cigarElements.size()-1;
-        CigarElement element = cigarElements.get(endIndex);
-        if (element.getOperator().isClipping()) {
-            if (element.getOperator()==CigarOperator.S) {
-                return element.getLength();
-            } else {
-                final CigarElement mayBeSoftClipping = cigarElements.get(fromStart ? 1 : cigarElements.size()-2);
-                return mayBeSoftClipping.getOperator()==CigarOperator.S ? mayBeSoftClipping.getLength() : 0;
-            }
-        } else {
-            return 0;
-        }
-    }
-
-    /**
      * Checks the input CIGAR for assumption that operator 'D' is not immediately adjacent to clipping operators.
      * Then convert the 'I' CigarElement, if it is at either end (terminal) of the input cigar, to a corresponding 'S' operator.
      * Note that we allow CIGAR of the format '10H10S10I10M', but disallows the format if after the conversion the cigar turns into a giant clip,
@@ -105,7 +28,7 @@ public final class SvCigarUtils {
      * @throws IllegalArgumentException when the checks as described above fail.
      */
     @VisibleForTesting
-    public static List<CigarElement> checkCigarAndConvertTerminalInsertionToSoftClip(final Cigar cigar) {
+    public static Cigar checkCigarAndConvertTerminalInsertionToSoftClip(final Cigar cigar) {
 
         if (cigar.numCigarElements()<2 ) return cigar.getCigarElements();
 
