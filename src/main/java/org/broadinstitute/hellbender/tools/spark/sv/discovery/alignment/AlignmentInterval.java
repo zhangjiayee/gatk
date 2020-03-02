@@ -9,7 +9,6 @@ import htsjdk.samtools.*;
 import htsjdk.samtools.util.SequenceUtil;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVInterval;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.Strand;
-import org.broadinstitute.hellbender.tools.spark.sv.utils.SvCigarUtils;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment;
@@ -654,12 +653,12 @@ public final class AlignmentInterval {
             int walkDistOnReadFromStart = 0;
             if ( distOnRefForStart != 0 ) {
                 final int startPosOnRead = startInAssembledContig - hardClipOffset; // utility method requests no hard clipped counted
-                walkDistOnReadFromStart = SvCigarUtils.computeAssociatedDistOnRead(cigarAlong5to3DirectionOfContig, startPosOnRead, distOnRefForStart, false);
+                walkDistOnReadFromStart = CigarUtils.computeAssociatedDistOnRead(cigarAlong5to3DirectionOfContig, startPosOnRead, distOnRefForStart, false);
             }
             int walkDistOnReadFromEnd = 0;
             if ( distOnRefForEnd != 0 ) {
                 final int startPosOnRead = endInAssembledContig - hardClipOffset; // utility method requests no hard clipped counted
-                walkDistOnReadFromEnd = SvCigarUtils.computeAssociatedDistOnRead(cigarAlong5to3DirectionOfContig, startPosOnRead, distOnRefForEnd, true);
+                walkDistOnReadFromEnd = CigarUtils.computeAssociatedDistOnRead(cigarAlong5to3DirectionOfContig, startPosOnRead, distOnRefForEnd, true);
             }
 
             start = startInAssembledContig + walkDistOnReadFromStart;
