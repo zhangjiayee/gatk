@@ -6,37 +6,15 @@ import htsjdk.samtools.CigarElement;
 import htsjdk.samtools.CigarOperator;
 import htsjdk.samtools.TextCigarCodec;
 import org.broadinstitute.hellbender.utils.Utils;
+import org.broadinstitute.hellbender.utils.read.CigarBuilder;
 import org.broadinstitute.hellbender.utils.read.CigarUtils;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Various utility functions helping calling structural variants.
  */
 public final class SvCigarUtils {
-
-    /**
-     * Checks the input CIGAR for assumption that operator 'D' is not immediately adjacent to clipping operators.
-     * Then convert the 'I' CigarElement, if it is at either end (terminal) of the input cigar, to a corresponding 'S' operator.
-     * Note that we allow CIGAR of the format '10H10S10I10M', but disallows the format if after the conversion the cigar turns into a giant clip,
-     * e.g. '10H10S10I10S10H' is not allowed (if allowed, it becomes a giant clip of '10H30S10H' which is non-sense).
-     *
-     * @return a pair of number of clipped (hard and soft, including the ones from the converted terminal 'I') bases at the front and back of the
-     *         input {@code cigarAlongInput5to3Direction}.
-     *
-     * @throws IllegalArgumentException when the checks as described above fail.
-     */
-    @VisibleForTesting
-    public static Cigar checkCigarAndConvertTerminalInsertionToSoftClip(final Cigar cigar) {
-
-        if (cigar.numCigarElements()<2 ) return cigar.getCigarElements();
-
-        final List<CigarElement> cigarElements = new ArrayList<>(cigar.getCigarElements());
-
-        final List<CigarElement> convertedList = convertInsToSoftClipFromOneEnd(cigarElements, true);
-        return convertInsToSoftClipFromOneEnd(convertedList, false);
-    }
 
     /**
      * Computes the corresponding distance needs to be walked on the reference, given the Cigar and distance walked on the read.
