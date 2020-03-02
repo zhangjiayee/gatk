@@ -20,9 +20,6 @@ public class SvCigarUtilsUnitTest extends GATKBaseTest {
     private Object[][] createReadWalkDistanceTestDataException() {
         final List<Object[]> data = new ArrayList<>(20);
 
-        data.add(new Object[]{TextCigarCodec.decode("50M10N101M"), 41, 10, false, 0});
-        data.add(new Object[]{TextCigarCodec.decode("50M10P101M"), 41, 10, false, 0});
-
         final Cigar cigar = TextCigarCodec.decode("35H40S10M20I25M30D50M55S60H");
         data.add(new Object[]{cigar, -1, 10, false, 0});
         data.add(new Object[]{cigar, 0, 10, false, 0});
