@@ -386,6 +386,7 @@ public final class CigarUtilsUnitTest {
     public static Object[][] randomValidCigars() {
         return CigarTestUtils.randomValidCigars(new Random(13), 1_000,
                 10, 100, new Cigar()).stream()
+                .filter(cigar -> cigar.getCigarElements().stream().map(CigarElement::getOperator).anyMatch(op -> !op.isClipping()))
                 .map(x -> new Object[] { x }).toArray(Object[][]::new);
     }
 

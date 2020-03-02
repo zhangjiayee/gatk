@@ -258,21 +258,22 @@ public final class CigarUtils {
 
         final int size = cigar.numCigarElements();
         if (size < 2) {
+            Utils.validateArg(size == 1 && !cigar.getFirstCigarElement().getOperator().isClipping(), "cigar is empty or completely clipped.");
             return 0;
         }
 
         int result = 0;
-        for (int n = 0; n < 2; n++) {
+        for (int n = 0; n < size; n++) {
             final int index = (tail == ClippingTail.LEFT_TAIL ? n : size - n - 1);
             final CigarElement element = cigar.getCigarElement(index);
             if (!element.getOperator().isClipping()) {
-                break;
+                return result;
             } else if (element.getOperator() == typeOfClip) {
                 result += element.getLength();
             }
         }
 
-        return result;
+        throw new IllegalArgumentException("Input cigar " + cigar + " is completely clipped.");
     }
 
     /**
