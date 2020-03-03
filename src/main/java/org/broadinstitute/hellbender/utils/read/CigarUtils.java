@@ -423,6 +423,8 @@ public final class CigarUtils {
                 builder.add(new CigarElement(element.getLength(), CigarOperator.SOFT_CLIP));
             } else if (cigar.getCigarElement(n-1).getOperator().isClipping() || cigar.getCigarElement(n+1).getOperator().isClipping()) {    // insertion preceding or following clip
                 builder.add(new CigarElement(element.getLength(), CigarOperator.SOFT_CLIP));
+            } else {    // interior insertion
+                builder.add(element);
             }
         }
 
