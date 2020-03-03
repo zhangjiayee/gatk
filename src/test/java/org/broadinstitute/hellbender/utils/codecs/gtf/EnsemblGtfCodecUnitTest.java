@@ -16,7 +16,7 @@ import java.util.List;
  */
 public class EnsemblGtfCodecUnitTest extends GATKBaseTest {
 
-    private static final String testResourceDir = publicTestDir + "org/broadinstitute/hellbender/utils/codecs/gencode/";
+    private static final String testResourceDir = publicTestDir + "org/broadinstitute/hellbender/utils/codecs/gtf/";
     private static final String eColiTestDir = publicTestDir + "org/broadinstitute/hellbender/tools/funcotator/ecoli_ds/gencode/ASM584v2/";
 
     @DataProvider

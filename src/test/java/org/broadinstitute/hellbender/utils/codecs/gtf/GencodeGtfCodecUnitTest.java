@@ -28,7 +28,7 @@ import java.util.*;
  */
 public class GencodeGtfCodecUnitTest extends GATKBaseTest {
 
-    private static final String testResourceDir = publicTestDir + "org/broadinstitute/hellbender/utils/codecs/gencode/";
+    private static final String testResourceDir = publicTestDir + "org/broadinstitute/hellbender/utils/codecs/gtf/";
     private static final String eColiTestDir = publicTestDir + "org/broadinstitute/hellbender/tools/funcotator/ecoli_ds/gencode/ASM584v2/";
     private static final String xyzTestFile = largeFileTestDir + "gencode.v26.primary_assembly.annotation.XYZ.gtf";
     private static final String gencodeHg19TestFile = largeFileTestDir + "gencode.v19.LargeFile.gtf";
@@ -3433,7 +3433,7 @@ public class GencodeGtfCodecUnitTest extends GATKBaseTest {
                 { "gencode.valid1.gtf"                           , testResourceDir, true},   // Valid file
                 { "gencode.valid_gencode_file2.gtf"              , testResourceDir, true},   // Valid file
                 { "gencode.and.this.is.a.valid.one.too.table.gtf", testResourceDir, true},   // Valid file
-//
+
                 { "Escherichia_coli_str_k_12_substr_mg1655.ASM584v2.44.gtf", eColiTestDir, false},   // Not valid GENCODE GTF
         };
     }
