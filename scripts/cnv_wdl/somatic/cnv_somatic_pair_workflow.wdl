@@ -133,6 +133,10 @@ workflow CNVSomaticPairWorkflow {
     #### optional arguments for plotting ####
     #########################################
     Int? minimum_contig_length
+    # If maximum_copy_ratio = Infinity, the maximum copy ratio will be automatically determined
+    String? maximum_copy_ratio
+    Float? point_size_copy_ratio
+    Float? point_size_allele_fraction
     Int? mem_gb_for_plotting
 
     ##########################################
@@ -298,6 +302,8 @@ workflow CNVSomaticPairWorkflow {
             denoised_copy_ratios = DenoiseReadCountsTumor.denoised_copy_ratios,
             ref_fasta_dict = ref_fasta_dict,
             minimum_contig_length = minimum_contig_length,
+            maximum_copy_ratio = maximum_copy_ratio,
+            point_size_copy_ratio = point_size_copy_ratio,
             gatk4_jar_override = gatk4_jar_override,
             gatk_docker = gatk_docker,
             mem_gb = mem_gb_for_plotting,
@@ -313,6 +319,9 @@ workflow CNVSomaticPairWorkflow {
             modeled_segments = ModelSegmentsTumor.modeled_segments,
             ref_fasta_dict = ref_fasta_dict,
             minimum_contig_length = minimum_contig_length,
+            maximum_copy_ratio = maximum_copy_ratio,
+            point_size_copy_ratio = point_size_copy_ratio,
+            point_size_allele_fraction = point_size_allele_fraction,
             gatk4_jar_override = gatk4_jar_override,
             gatk_docker = gatk_docker,
             mem_gb = mem_gb_for_plotting,
@@ -427,6 +436,8 @@ workflow CNVSomaticPairWorkflow {
                 denoised_copy_ratios = DenoiseReadCountsNormal.denoised_copy_ratios,
                 ref_fasta_dict = ref_fasta_dict,
                 minimum_contig_length = minimum_contig_length,
+                maximum_copy_ratio = maximum_copy_ratio,
+                point_size_copy_ratio = point_size_copy_ratio,
                 gatk4_jar_override = gatk4_jar_override,
                 gatk_docker = gatk_docker,
                 mem_gb = mem_gb_for_plotting,
@@ -442,6 +453,9 @@ workflow CNVSomaticPairWorkflow {
                 modeled_segments = ModelSegmentsNormal.modeled_segments,
                 ref_fasta_dict = ref_fasta_dict,
                 minimum_contig_length = minimum_contig_length,
+                maximum_copy_ratio = maximum_copy_ratio,
+                point_size_copy_ratio = point_size_copy_ratio,
+                point_size_allele_fraction = point_size_allele_fraction,
                 gatk4_jar_override = gatk4_jar_override,
                 gatk_docker = gatk_docker,
                 mem_gb = mem_gb_for_plotting,
@@ -510,7 +524,6 @@ workflow CNVSomaticPairWorkflow {
         File called_copy_ratio_segments_tumor = CallCopyRatioSegmentsTumor.called_copy_ratio_segments
         File called_copy_ratio_legacy_segments_tumor = CallCopyRatioSegmentsTumor.called_copy_ratio_legacy_segments
         File denoised_copy_ratios_plot_tumor = PlotDenoisedCopyRatiosTumor.denoised_copy_ratios_plot
-        File denoised_copy_ratios_lim_4_plot_tumor = PlotDenoisedCopyRatiosTumor.denoised_copy_ratios_lim_4_plot
         File standardized_MAD_tumor = PlotDenoisedCopyRatiosTumor.standardized_MAD
         Float standardized_MAD_value_tumor = PlotDenoisedCopyRatiosTumor.standardized_MAD_value
         File denoised_MAD_tumor = PlotDenoisedCopyRatiosTumor.denoised_MAD
@@ -541,7 +554,6 @@ workflow CNVSomaticPairWorkflow {
         File? called_copy_ratio_segments_normal = CallCopyRatioSegmentsNormal.called_copy_ratio_segments
         File? called_copy_ratio_legacy_segments_normal = CallCopyRatioSegmentsNormal.called_copy_ratio_legacy_segments
         File? denoised_copy_ratios_plot_normal = PlotDenoisedCopyRatiosNormal.denoised_copy_ratios_plot
-        File? denoised_copy_ratios_lim_4_plot_normal = PlotDenoisedCopyRatiosNormal.denoised_copy_ratios_lim_4_plot
         File? standardized_MAD_normal = PlotDenoisedCopyRatiosNormal.standardized_MAD
         Float? standardized_MAD_value_normal = PlotDenoisedCopyRatiosNormal.standardized_MAD_value
         File? denoised_MAD_normal = PlotDenoisedCopyRatiosNormal.denoised_MAD
@@ -763,6 +775,8 @@ task PlotDenoisedCopyRatios {
     File denoised_copy_ratios
     File ref_fasta_dict
     Int? minimum_contig_length
+    String? maximum_copy_ratio
+    Float? point_size_copy_ratio
     String? output_dir
     File? gatk4_jar_override
 
@@ -789,6 +803,8 @@ task PlotDenoisedCopyRatios {
             --denoised-copy-ratios ${denoised_copy_ratios} \
             --sequence-dictionary ${ref_fasta_dict} \
             --minimum-contig-length ${default="1000000" minimum_contig_length} \
+            --maximum-copy-ratio ${default="4.0" maximum_copy_ratio} \
+            --point-size-copy-ratio ${default="0.2" point_size_copy_ratio} \
             --output ${output_dir_} \
             --output-prefix ${entity_id}
     >>>
@@ -803,7 +819,6 @@ task PlotDenoisedCopyRatios {
 
     output {
         File denoised_copy_ratios_plot = "${output_dir_}/${entity_id}.denoised.png"
-        File denoised_copy_ratios_lim_4_plot = "${output_dir_}/${entity_id}.denoisedLimit4.png"
         File standardized_MAD = "${output_dir_}/${entity_id}.standardizedMAD.txt"
         Float standardized_MAD_value = read_float(standardized_MAD)
         File denoised_MAD = "${output_dir_}/${entity_id}.denoisedMAD.txt"
@@ -822,6 +837,9 @@ task PlotModeledSegments {
     File modeled_segments
     File ref_fasta_dict
     Int? minimum_contig_length
+    String? maximum_copy_ratio
+    Float? point_size_copy_ratio
+    Float? point_size_allele_fraction
     String? output_dir
     File? gatk4_jar_override
 
@@ -849,6 +867,9 @@ task PlotModeledSegments {
             --segments ${modeled_segments} \
             --sequence-dictionary ${ref_fasta_dict} \
             --minimum-contig-length ${default="1000000" minimum_contig_length} \
+            --maximum-copy-ratio ${default="4.0" maximum_copy_ratio} \
+            --point-size-copy-ratio ${default="0.2" point_size_copy_ratio} \
+            --point-size-allele-fraction ${default="0.4" point_size_allele_fraction} \
             --output ${output_dir_} \
             --output-prefix ${entity_id}
     >>>
