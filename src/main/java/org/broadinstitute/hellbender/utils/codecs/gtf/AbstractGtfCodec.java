@@ -511,7 +511,7 @@ public abstract class AbstractGtfCodec extends AbstractFeatureCodec<GencodeGtfFe
     abstract List<String> getHeader();
 
     /**
-     * @return The {@link String} a line beings with to indicate that line is commented out.
+     * @return The {@link String} a line begins with to indicate that line is commented out.
      */
     abstract String getLineComment();
 
