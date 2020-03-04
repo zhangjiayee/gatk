@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
 /**
  * {@link htsjdk.tribble.Tribble} Codec to read data from a GENCODE GTF file.
  *
- * GENCODE GTF Files are defined here: https://www.gencodegenes.org/data_format.html
+ * GENCODE GTF Files are defined here: https://www.gencodegenes.org/pages/data_format.html
  *
  * This codec will scan through a GENCODE GTF file and return {@link GencodeGtfFeature} objects.
  * {@link GencodeGtfFeature} objects contain fields that have sub-features.  All features are
