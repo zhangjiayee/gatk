@@ -5,11 +5,11 @@ import htsjdk.samtools.util.CloserUtil;
 import htsjdk.samtools.util.IOUtil;
 import htsjdk.samtools.util.LocationAware;
 import htsjdk.tribble.AbstractFeatureCodec;
-import htsjdk.tribble.Feature;
 import htsjdk.tribble.FeatureCodecHeader;
 import htsjdk.tribble.readers.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.exceptions.UserException;
 
 import java.io.*;
@@ -19,7 +19,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-public abstract class AbstractGtfCodec<T extends Feature> extends AbstractFeatureCodec<T, LineIterator> {
+public abstract class AbstractGtfCodec extends AbstractFeatureCodec<GencodeGtfFeature, LineIterator> {
 
     static final Logger logger = LogManager.getLogger(AbstractGtfCodec.class);
 
@@ -41,8 +41,8 @@ public abstract class AbstractGtfCodec<T extends Feature> extends AbstractFeatur
 
     //==================================================================================================================
     // Constructors:
-    protected AbstractGtfCodec(final Class<T> myClass) {
-        super(myClass);
+    protected AbstractGtfCodec() {
+        super(GencodeGtfFeature.class);
     }
 
     //==================================================================================================================
@@ -90,6 +90,142 @@ public abstract class AbstractGtfCodec<T extends Feature> extends AbstractFeatur
         }
 
         return canDecode;
+    }
+
+    @Override
+    public GencodeGtfFeature decode(final LineIterator lineIterator) {
+
+        GencodeGtfFeature decodedFeature = null;
+
+        // Create some caches for our data (as we need to group it):
+        GencodeGtfGeneFeature gene = null;
+        GencodeGtfTranscriptFeature transcript = null;
+        final List<GencodeGtfExonFeature> exonStore = new ArrayList<>();
+        final List<GencodeGtfFeature> leafFeatureStore = new ArrayList<>();
+
+        boolean needToFlushRecords = false;
+
+        // Accumulate lines until we have a full gene and all of its internal features:
+        while ( lineIterator.hasNext() ) {
+
+            final String line = lineIterator.peek();
+
+            // We must assume we can get header lines.
+            // If we get a header line, we return null.
+            // This allows indexing to work.
+            if ( line.startsWith(getLineComment()) ) {
+                lineIterator.next();
+                return null;
+            }
+
+            // Split the line into different GTF Fields
+            final String[] splitLine = splitGtfLine(line);
+
+            // We need to key off the feature type to collapse our accumulated records:
+            final GencodeGtfFeature.FeatureType featureType = GencodeGtfFeature.FeatureType.getEnum( splitLine[FEATURE_TYPE_FIELD_INDEX] );
+
+            // Create a baseline feature to add into our data:
+            final GencodeGtfFeature feature = GencodeGtfFeature.create(splitLine, getGtfFileType());
+
+            // Make sure we keep track of the line number for if and when we need to write the file back out:
+            feature.setFeatureOrderNumber(getCurrentLineNumber());
+
+            // Set our UCSC version number:
+            feature.setUcscGenomeVersion(getUcscVersionNumber());
+
+            // Once we see another gene we take all accumulated records and combine them into the
+            // current GencodeGtfFeature.
+            // Then we then break out of the loop and return the last full gene object.
+            if ((gene != null) && (featureType == GencodeGtfFeature.FeatureType.GENE)) {
+
+                aggregateRecordsIntoGeneFeature(gene, transcript, exonStore, leafFeatureStore);
+
+                // If we found a new gene line, we set our decodedFeature to be
+                // the gene we just finished building.
+                //
+                // We intentionally break here so that we do not call lineIterator.next().
+                // This is so that the new gene (i.e. the one that triggered us to be in this if statement)
+                // remains intact for the next call to decode.
+                decodedFeature = gene;
+
+                needToFlushRecords = false;
+
+                break;
+            }
+            // Once we see a transcript we aggregate our data into our current gene object and
+            // set the current transcript object to the new transcript we just read.
+            // Then we continue reading from the line iterator.
+            else if ((transcript != null) && (featureType == GencodeGtfFeature.FeatureType.TRANSCRIPT)) {
+
+                aggregateRecordsIntoGeneFeature(gene, transcript, exonStore, leafFeatureStore);
+
+                transcript = (GencodeGtfTranscriptFeature) feature;
+                incrementLineNumber();
+
+                needToFlushRecords = true;
+            }
+            else {
+                // We have not reached the end of this set of gene / transcript records.
+                // We must cache these records together so we can create a meaningful data hierarchy from them all.
+                // Records are stored in their Feature form, not string form.
+
+                // Add the feature to the correct storage unit for easy assembly later:
+                switch (featureType) {
+                    case GENE:
+                        gene = (GencodeGtfGeneFeature)feature;
+                        break;
+                    case TRANSCRIPT:
+                        transcript = (GencodeGtfTranscriptFeature)feature;
+                        break;
+                    case EXON:
+                        exonStore.add((GencodeGtfExonFeature)feature);
+                        break;
+                    default:
+                        leafFeatureStore.add(feature);
+                        break;
+                }
+
+                needToFlushRecords = false;
+                incrementLineNumber();
+            }
+
+            // Increment our iterator here so we don't accidentally miss any features from the following gene
+            lineIterator.next();
+        }
+
+        // For the last record in the file, we need to do one final check to make sure that we don't miss it.
+        // This is because there will not be a subsequent `gene` line to read:
+        if ( (gene != null) && (needToFlushRecords || (!exonStore.isEmpty()) || (!leafFeatureStore.isEmpty())) ) {
+
+            aggregateRecordsIntoGeneFeature(gene, transcript, exonStore, leafFeatureStore);
+            decodedFeature = gene;
+        }
+
+        // If we have other records left over we should probably yell a lot,
+        // as this is bad.
+        //
+        // However, this should never actually happen.
+        //
+        if ( (!exonStore.isEmpty()) || (!leafFeatureStore.isEmpty()) ) {
+
+            if (!exonStore.isEmpty()) {
+                logger.error("Gene Feature Aggregation: Exon store not empty: " + exonStore.toString());
+            }
+
+            if (!leafFeatureStore.isEmpty()) {
+                logger.error("Gene Feature Aggregation: leaf feature store not empty: " + leafFeatureStore.toString());
+            }
+
+            final String msg = "Aggregated data left over after parsing complete: Exons: " + exonStore.size() + " ; LeafFeatures: " + leafFeatureStore.size();
+            throw new GATKException.ShouldNeverReachHereException(msg);
+        }
+
+        // Now we validate our feature before returning it:
+        if ( ! validateFeature(decodedFeature) ) {
+            throw new UserException.MalformedFile("Decoded feature is not valid: " + decodedFeature);
+        }
+
+        return decodedFeature;
     }
 
     // ============================================================================================================
@@ -201,6 +337,80 @@ public abstract class AbstractGtfCodec<T extends Feature> extends AbstractFeatur
     // Instance Methods:
 
     /**
+     * Check if the given header of a tentative GTF file is, in fact, the header to such a file.
+     * @param header Header lines to check for conformity to GTF specifications.
+     * @return true if the given {@code header} is that of a GTF file; false otherwise.
+     */
+    @VisibleForTesting
+    boolean validateHeader(final List<String> header) {
+        return validateHeader(header, false);
+    }
+
+    /**
+     * Validate all fields in the given {@link GencodeGtfFeature}.
+     * @param feature {@link GencodeGtfFeature} to validate.
+     * @return {@code true} IFF the given {@code feature} / {@code versionNumber} combination is valid.  {@code false} otherwise.
+     */
+    boolean validateFeature(final GencodeGtfFeature feature) {
+        return validateBaseGtfFeatureFields(feature) && validateFeatureSubtype(feature);
+    }
+
+    /**
+     * Validates a given {@link GencodeGtfFeature} for basic GTF criteria.
+     * This method ensures that required fields are defined, but does not interrogate their values.
+     * @param feature A {@link GencodeGtfFeature} to validate.
+     * @return True if {@code feature} contains all required base GTF fields.
+     */
+    static boolean validateBaseGtfFeatureFields(final GencodeGtfFeature feature) {
+
+        if ( feature == null ) {
+            return false;
+        }
+
+        final GencodeGtfFeature.FeatureType featureType = feature.getFeatureType();
+
+        if (feature.getChromosomeName() == null) {
+            return false;
+        }
+        if (feature.getAnnotationSource() == null) {
+            return false;
+        }
+        if (feature.getFeatureType() == null) {
+            return false;
+        }
+        if (feature.getGenomicStrand() == null) {
+            return false;
+        }
+        if (feature.getGenomicPhase() == null) {
+            return false;
+        }
+
+        if (feature.getGeneId() == null) {
+            return false;
+        }
+        if (feature.getGeneType() == null) {
+            return false;
+        }
+        if (feature.getGeneName() == null) {
+            return false;
+        }
+
+        if ( (featureType != GencodeGtfFeature.FeatureType.GENE) &&
+             (featureType != GencodeGtfFeature.FeatureType.TRANSCRIPT) &&
+             (featureType != GencodeGtfFeature.FeatureType.SELENOCYSTEINE) ) {
+
+            if (feature.getExonNumber() == GencodeGtfFeature.NO_EXON_NUMBER) {
+                return false;
+            }
+            if (feature.getExonId() == null) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Split the given line in a GTF file into fields.
      * Throws a {@link UserException} if the file is not valid.
      * @param line {@link String} containing one line of a GTF file to split.
@@ -285,8 +495,17 @@ public abstract class AbstractGtfCodec<T extends Feature> extends AbstractFeatur
         return true;
     }
 
-    /** @return The current line number for this AbstractGtfCodec. */
+    /** @return The current line number for this {@link AbstractGtfCodec}. */
     abstract int getCurrentLineNumber();
+
+    /**
+     * Increments the current line number for this {@link AbstractGtfCodec} by one.
+     *
+     * This method is needed because of how Tribble initializes codecs.
+     * Each codec needs its own internal state for what line number it is on.  This parent class cannot store the state,
+     * or the child codecs will not work.
+     */
+    abstract void incrementLineNumber();
 
     /** @return The header AbstractGtfCodec. */
     abstract List<String> getHeader();
@@ -310,16 +529,6 @@ public abstract class AbstractGtfCodec<T extends Feature> extends AbstractFeatur
     /**
      * Check if the given header of a tentative GTF file is, in fact, the header to such a file.
      * @param header Header lines to check for conformity to GTF specifications.
-     * @return true if the given {@code header} is that of a GTF file; false otherwise.
-     */
-    @VisibleForTesting
-    boolean validateHeader(final List<String> header) {
-        return validateHeader(header, false);
-    }
-
-    /**
-     * Check if the given header of a tentative GTF file is, in fact, the header to such a file.
-     * @param header Header lines to check for conformity to GTF specifications.
      * @param throwIfInvalid If true, will throw a {@link UserException.MalformedFile} if the header is invalid.
      * @return true if the given {@code header} is that of a GTF file; false otherwise.
      */
@@ -327,11 +536,24 @@ public abstract class AbstractGtfCodec<T extends Feature> extends AbstractFeatur
     abstract boolean validateHeader(final List<String> header, final boolean throwIfInvalid);
 
     /**
+     * Validate the given {@link GencodeGtfFeature} according to what type of feature it is.
+     * @param feature {@link GencodeGtfFeature} to validate.
+     * @return {@code true} IFF the given {@code feature} / {@code versionNumber} combination is valid.  {@code false} otherwise.
+     */
+    abstract boolean validateFeatureSubtype(final GencodeGtfFeature feature);
+
+    /**
+     * Get the UCSC Version Number of this {@link AbstractGtfCodec}.
+     * @return The {@link String} representation of the UCSC version number corresponding to the backing data source behind this {@link AbstractGtfCodec}.
+     */
+    abstract String getUcscVersionNumber();
+
+    /**
      * Read the {@code header} from the given {@link LineIterator} for the GTF File.
      * Will also validate this {@code header} for correctness before returning it.
      * Throws a {@link UserException.MalformedFile} if the header is malformed.
      *
-     * This must be called before {@link #decode(Object)}
+     * This must be called before {@link #decode(LineIterator)}
      *
      * @param reader The {@link LineIterator} from which to read the header.
      * @return The header as read from the {@code reader}

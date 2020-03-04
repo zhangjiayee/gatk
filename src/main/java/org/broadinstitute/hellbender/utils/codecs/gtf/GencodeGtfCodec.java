@@ -54,7 +54,7 @@ import java.util.regex.Pattern;
  *
  * Created by jonn on 7/21/17.
  */
-final public class GencodeGtfCodec extends AbstractGtfCodec<GencodeGtfFeature> {
+final public class GencodeGtfCodec extends AbstractGtfCodec {
 
     private static final Logger logger = LogManager.getLogger(GencodeGtfCodec.class);
 
@@ -103,7 +103,7 @@ final public class GencodeGtfCodec extends AbstractGtfCodec<GencodeGtfFeature> {
     // ============================================================================================================
 
     public GencodeGtfCodec() {
-        super(GencodeGtfFeature.class);
+        super();
     }
 
     // ============================================================================================================
@@ -116,142 +116,6 @@ final public class GencodeGtfCodec extends AbstractGtfCodec<GencodeGtfFeature> {
     @Override
     List<String> getHeader() {
         return header;
-    }
-
-    @Override
-    public GencodeGtfFeature decode(final LineIterator lineIterator) {
-
-        GencodeGtfFeature decodedFeature = null;
-
-        // Create some caches for our data (as we need to group it):
-        GencodeGtfGeneFeature gene = null;
-        GencodeGtfTranscriptFeature transcript = null;
-        final List<GencodeGtfExonFeature> exonStore = new ArrayList<>();
-        final List<GencodeGtfFeature> leafFeatureStore = new ArrayList<>();
-
-        boolean needToFlushRecords = false;
-
-        // Accumulate lines until we have a full gene and all of its internal features:
-        while ( lineIterator.hasNext() ) {
-
-            final String line = lineIterator.peek();
-
-            // We must assume we can get header lines.
-            // If we get a header line, we return null.
-            // This allows indexing to work.
-            if ( line.startsWith(getLineComment()) ) {
-                lineIterator.next();
-                return null;
-            }
-
-            // Split the line into different GTF Fields
-            final String[] splitLine = splitGtfLine(line);
-
-            // We need to key off the feature type to collapse our accumulated records:
-            final GencodeGtfFeature.FeatureType featureType = GencodeGtfFeature.FeatureType.getEnum( splitLine[FEATURE_TYPE_FIELD_INDEX] );
-
-            // Create a baseline feature to add into our data:
-            final GencodeGtfFeature feature = GencodeGtfFeature.create(splitLine, GTF_FILE_TYPE_STRING);
-
-            // Make sure we keep track of the line number for if and when we need to write the file back out:
-            feature.setFeatureOrderNumber(currentLineNum);
-
-            // Set our UCSC version number:
-            feature.setUcscGenomeVersion(getUcscVersionFromGencodeVersion(versionNumber));
-
-            // Once we see another gene we take all accumulated records and combine them into the
-            // current GencodeGtfFeature.
-            // Then we then break out of the loop and return the last full gene object.
-            if ((gene != null) && (featureType == GencodeGtfFeature.FeatureType.GENE)) {
-
-                aggregateRecordsIntoGeneFeature(gene, transcript, exonStore, leafFeatureStore);
-
-                // If we found a new gene line, we set our decodedFeature to be
-                // the gene we just finished building.
-                //
-                // We intentionally break here so that we do not call lineIterator.next().
-                // This is so that the new gene (i.e. the one that triggered us to be in this if statement)
-                // remains intact for the next call to decode.
-                decodedFeature = gene;
-
-                needToFlushRecords = false;
-
-                break;
-            }
-            // Once we see a transcript we aggregate our data into our current gene object and
-            // set the current transcript object to the new transcript we just read.
-            // Then we continue reading from the line iterator.
-            else if ((transcript != null) && (featureType == GencodeGtfFeature.FeatureType.TRANSCRIPT)) {
-
-                aggregateRecordsIntoGeneFeature(gene, transcript, exonStore, leafFeatureStore);
-
-                transcript = (GencodeGtfTranscriptFeature) feature;
-                ++currentLineNum;
-
-                needToFlushRecords = true;
-            }
-            else {
-                // We have not reached the end of this set of gene / transcript records.
-                // We must cache these records together so we can create a meaningful data hierarchy from them all.
-                // Records are stored in their Feature form, not string form.
-
-                // Add the feature to the correct storage unit for easy assembly later:
-                switch (featureType) {
-                    case GENE:
-                        gene = (GencodeGtfGeneFeature)feature;
-                        break;
-                    case TRANSCRIPT:
-                        transcript = (GencodeGtfTranscriptFeature)feature;
-                        break;
-                    case EXON:
-                        exonStore.add((GencodeGtfExonFeature)feature);
-                        break;
-                    default:
-                        leafFeatureStore.add(feature);
-                        break;
-                }
-
-                needToFlushRecords = false;
-                ++currentLineNum;
-            }
-
-            // Increment our iterator here so we don't accidentally miss any features from the following gene
-            lineIterator.next();
-        }
-
-        // For the last record in the file, we need to do one final check to make sure that we don't miss it.
-        // This is because there will not be a subsequent `gene` line to read:
-        if ( (gene != null) && (needToFlushRecords || (!exonStore.isEmpty()) || (!leafFeatureStore.isEmpty())) ) {
-
-            aggregateRecordsIntoGeneFeature(gene, transcript, exonStore, leafFeatureStore);
-            decodedFeature = gene;
-        }
-
-        // If we have other records left over we should probably yell a lot,
-        // as this is bad.
-        //
-        // However, this should never actually happen.
-        //
-        if ( (!exonStore.isEmpty()) || (!leafFeatureStore.isEmpty()) ) {
-
-            if (!exonStore.isEmpty()) {
-                logger.error("Gene Feature Aggregation: Exon store not empty: " + exonStore.toString());
-            }
-
-            if (!leafFeatureStore.isEmpty()) {
-                logger.error("Gene Feature Aggregation: leaf feature store not empty: " + leafFeatureStore.toString());
-            }
-
-            final String msg = "Aggregated data left over after parsing complete: Exons: " + exonStore.size() + " ; LeafFeatures: " + leafFeatureStore.size();
-            throw new GATKException.ShouldNeverReachHereException(msg);
-        }
-
-        // Now we validate our feature before returning it:
-        if ( ! validateGencodeGtfFeature( decodedFeature, versionNumber ) ) {
-            throw new UserException.MalformedFile("Decoded feature is not valid: " + decodedFeature);
-        }
-
-        return decodedFeature;
     }
 
     @Override
@@ -295,15 +159,11 @@ final public class GencodeGtfCodec extends AbstractGtfCodec<GencodeGtfFeature> {
     /**
      * Validates a given {@link GencodeGtfFeature} against a given version of the GENCODE GTF file spec.
      * This method ensures that all required fields are defined, but does not interrogate their values.
-     * @param feature A {@link GencodeGtfFeature} to validate.
+     * @param feature A {@link GencodeGtfFeature} to validate.  MUST NOT BE {@code null}.
      * @param gtfVersion The GENCODE GTF version against which to validate {@code feature}
      * @return True if {@code feature} contains all required fields for the given GENCODE GTF version, {@code gtfVersion}
      */
-    static public boolean validateGencodeGtfFeature(final GencodeGtfFeature feature, final int gtfVersion) {
-
-        if ( feature == null ) {
-            return false;
-        }
+    static boolean validateGencodeGtfFeature(final GencodeGtfFeature feature, final int gtfVersion) {
 
         if (gtfVersion < GencodeGtfCodec.GENCODE_GTF_MIN_VERSION_NUM_INCLUSIVE) {
             throw new GATKException("Invalid version number for validation: " + gtfVersion +
@@ -311,35 +171,6 @@ final public class GencodeGtfCodec extends AbstractGtfCodec<GencodeGtfFeature> {
         }
 
         final GencodeGtfFeature.FeatureType featureType = feature.getFeatureType();
-
-        if (feature.getChromosomeName() == null) {
-            return false;
-        }
-        if (feature.getAnnotationSource() == null) {
-            return false;
-        }
-        if (feature.getFeatureType() == null) {
-            return false;
-        }
-        if (feature.getGenomicStrand() == null) {
-            return false;
-        }
-        if (feature.getGenomicPhase() == null) {
-            return false;
-        }
-
-        if (feature.getGeneId() == null) {
-            return false;
-        }
-        if (feature.getGeneType() == null) {
-            return false;
-        }
-        if (feature.getGeneName() == null) {
-            return false;
-        }
-        if (feature.getLocusLevel() == null) {
-            return false;
-        }
 
         if ( gtfVersion < 26 ) {
             if (feature.getGeneStatus() == null) {
@@ -359,18 +190,6 @@ final public class GencodeGtfCodec extends AbstractGtfCodec<GencodeGtfFeature> {
                 return false;
             }
             if (feature.getTranscriptName() == null) {
-                return false;
-            }
-        }
-
-        if ( (featureType != GencodeGtfFeature.FeatureType.GENE) &&
-             (featureType != GencodeGtfFeature.FeatureType.TRANSCRIPT) &&
-             (featureType != GencodeGtfFeature.FeatureType.SELENOCYSTEINE) ) {
-
-            if (feature.getExonNumber() == GencodeGtfFeature.NO_EXON_NUMBER) {
-                return false;
-            }
-            if (feature.getExonId() == null) {
                 return false;
             }
         }
@@ -404,6 +223,21 @@ final public class GencodeGtfCodec extends AbstractGtfCodec<GencodeGtfFeature> {
     @Override
     String  getGtfFileType() {
         return GTF_FILE_TYPE_STRING;
+    }
+
+    @Override
+    boolean validateFeatureSubtype(final GencodeGtfFeature feature ) {
+        return validateGencodeGtfFeature( feature, versionNumber );
+    }
+
+    @Override
+    void incrementLineNumber() {
+        ++currentLineNum;
+    }
+
+    @Override
+    String getUcscVersionNumber() {
+        return getUcscVersionFromGencodeVersion(versionNumber);
     }
 
     // ============================================================================================================
