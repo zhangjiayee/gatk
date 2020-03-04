@@ -82,7 +82,7 @@ final public class GencodeGtfCodec extends AbstractGtfCodec {
      * Version equivalences obtained here:
      *
      *  https://genome.ucsc.edu/FAQ/FAQreleases.html
-     *  https://www.gencodegenes.org/releases/
+     *  https://www.gencodegenes.org/human/releases.html
      *
      * @param gencodeVersion The gencode version to convert to UCSC version.
      * @return The UCSC version in a {@link String} corresponding to the given gencode version.
@@ -121,9 +121,6 @@ final public class GencodeGtfCodec extends AbstractGtfCodec {
     @Override
     List<String> readActualHeader(final LineIterator reader) {
 
-        // Make sure we start with a clear header:
-        header.clear();
-
         // Clear our version number too:
         versionNumber = -1;
 
@@ -148,7 +145,9 @@ final public class GencodeGtfCodec extends AbstractGtfCodec {
     private void setVersionNumber() {
         try {
             final Matcher versionMatcher = VERSION_PATTERN.matcher(header.get(0));
-            versionMatcher.find();
+            if (!versionMatcher.find() ) {
+                throw new UserException.MalformedFile("Cannot find version number from Gencode GTF header.");
+            }
             versionNumber = Integer.valueOf(versionMatcher.group(1));
         }
         catch (final NumberFormatException ex) {

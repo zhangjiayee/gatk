@@ -15,19 +15,6 @@ import java.util.Set;
 abstract class BaseFuncotatorArgumentCollection implements Serializable {
     private static final long serialVersionUID = 1L;
 
-//    protected enum FuncotatorReferenceVersion {
-//        hg19("hg19"),hg38("hg38"),b37("b37");
-//
-//        private final String stringRepresentation;
-//
-//        FuncotatorReferenceVersion(final String stringRepresentation) {
-//            this.stringRepresentation = stringRepresentation;
-//        }
-//
-//        @Override
-//        public String toString() { return stringRepresentation; }
-//    }
-
     /** String representing the b37 version of the homo sapiens reference. */
     protected static String FuncotatorReferenceVersionB37 = "b37";
     /**

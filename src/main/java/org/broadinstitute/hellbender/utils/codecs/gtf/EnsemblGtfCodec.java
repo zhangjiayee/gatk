@@ -33,8 +33,8 @@ final public class EnsemblGtfCodec extends AbstractGtfCodec {
     // Private Members:
 
     private final List<String> header         = new ArrayList<>();
-    private int                currentLineNum = 1;
-    private String version = "";
+    private       int          currentLineNum = 1;
+    private       String       version        = "";
 
     //==================================================================================================================
     // Constructors:
@@ -85,9 +85,6 @@ final public class EnsemblGtfCodec extends AbstractGtfCodec {
 
     @Override
     List<String> readActualHeader(final LineIterator reader) {
-
-        // Make sure we start with a clear header:
-        header.clear();
 
         // Read in the header lines:
         ingestHeaderLines(reader);

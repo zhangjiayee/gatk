@@ -22,8 +22,8 @@ import java.util.*;
 
 
 /**
- * Test class for the GENCODE GTF Reader.
- * Modeled after the TableCodecUnitTest, with extras specific to this file format.
+ * Test class for the GENCODE GTF Reader ({@link GencodeGtfCodec}).
+ * Modeled after the {@link org.broadinstitute.hellbender.utils.codecs.table.TableCodecUnitTest}, with extras specific to this file format.
  * Created by jonn on 7/27/17.
  */
 public class GencodeGtfCodecUnitTest extends GATKBaseTest {
@@ -3537,6 +3537,12 @@ public class GencodeGtfCodecUnitTest extends GATKBaseTest {
                         "#!genome-build-accession GCA_000005845.2",
                         "#2014-08" ),
                         false },                                           // Bad header - genebuild-last-updated
+
+                { Arrays.asList( "##description: evidence-based annotation of the human genome (GRCh38), version 26 (Ensembl 88)",
+                        "##provider: GENCODE",
+                        "##contact: gencode-help@sanger.ac.uk",
+                        "##date: 2014-07-25" ),
+                        false },                                 // Bad Gencode GTF Header - too few lines.
 
         };
     }

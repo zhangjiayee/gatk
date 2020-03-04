@@ -248,7 +248,7 @@ public abstract class AbstractGtfCodec extends AbstractFeatureCodec<GencodeGtfFe
     }
 
     @Override
-    public FeatureCodecHeader readHeader(final LineIterator lineIterator) throws IOException {
+    public FeatureCodecHeader readHeader(final LineIterator lineIterator) {
         return new FeatureCodecHeader(readActualHeader(lineIterator), FeatureCodecHeader.NO_HEADER_END);
     }
 
@@ -444,8 +444,7 @@ public abstract class AbstractGtfCodec extends AbstractFeatureCodec<GencodeGtfFe
             // Grab them until there are no more commented out lines.
             if ( line.startsWith(getLineComment()) ) {
 
-                // Sanity check for if a file has
-                // WAY too many commented out lines at the top:
+                // Sanity check for if a file has too many commented out lines at the top:
                 if (numHeaderLinesRead > HEADER_NUM_LINES) {
                     throw new UserException.MalformedFile(
                             "File header is longer than expected: " + numHeaderLinesRead + " > " + HEADER_NUM_LINES

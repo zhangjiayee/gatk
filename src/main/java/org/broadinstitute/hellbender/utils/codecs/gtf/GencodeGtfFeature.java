@@ -71,7 +71,8 @@ public abstract class GencodeGtfFeature implements Feature, Comparable<GencodeGt
     private static final Pattern NUMBER_PATTERN                 = Pattern.compile("\\d\\d*");
 
     private String ucscGenomeVersion =  null;
-    private final GencodeGtfFeatureBaseData baseData;
+    @VisibleForTesting
+    final GencodeGtfFeatureBaseData baseData;
 
     // ================================================================================================
 
